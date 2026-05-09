@@ -130,6 +130,18 @@
     .aoe-target .aoe-dmg.full { color: #e94560; }
     .aoe-target .aoe-dmg.half { color: #e9a045; }
 
+    /* ═══ DICE RESULT ═══ */
+    #dice-result { display: none; width: 100%; max-width: 500px; padding: 12px; background: linear-gradient(180deg, #1a102e, #0d0d1a); border: 2px solid #e94560; border-radius: 12px; margin-top: 6px; text-align: center; animation: dice-pop 0.4s cubic-bezier(0.34,1.56,0.64,1); }
+    #dice-result.visible { display: block; }
+    #dice-result.nat-crit { border-color: #ffd700; box-shadow: 0 0 24px rgba(255,215,0,0.5); }
+    #dice-result.nat-fail { border-color: #e94560; box-shadow: 0 0 24px rgba(233,69,96,0.5); }
+    #dice-result-label { font-size: 10px; color: #8899aa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    #dice-result-value { font-size: 42px; font-weight: 900; color: #fff; text-shadow: 0 0 16px rgba(233,69,96,0.6); line-height: 1; }
+    #dice-result.nat-crit #dice-result-value { color: #ffd700; text-shadow: 0 0 20px rgba(255,215,0,0.8); }
+    #dice-result.nat-fail #dice-result-value { color: #e94560; text-shadow: 0 0 20px rgba(233,69,96,0.8); }
+    #dice-result-detail { font-size: 12px; color: #b0a0c8; margin-top: 4px; }
+    @keyframes dice-pop { 0%{transform:scale(0.3);opacity:0} 100%{transform:scale(1);opacity:1} }
+
     /* ═══ LINK PANEL ═══ */
     #link-panel { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 16px; background: linear-gradient(180deg, #1a1a2e, #16213e); border: 2px solid #0f3460; border-radius: 12px; width: 100%; max-width: 500px; }
     #link-panel.hidden { display: none; }
@@ -266,6 +278,13 @@
         <div id="monster-status"></div>
         <div class="monster-template-hint">Paste monster stat block as JSON</div>
       </div>
+    </div>
+
+    <!-- Dice Result Display -->
+    <div id="dice-result">
+      <div id="dice-result-label"></div>
+      <div id="dice-result-value"></div>
+      <div id="dice-result-detail"></div>
     </div>
 
     <!-- Combat Overlay -->

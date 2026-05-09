@@ -9,27 +9,41 @@ const resultDisplay = document.getElementById("result-display");
 
 let diceBox = null;
 let isRolling = false;
+let diceReady = false;
 
 OBR.onReady(async () => {
-  diceBox = new DiceBox("#dice-box", {
-    assetPath: "/dice-assets/assets/",
-    origin: "/dice-assets/",
-    scale: 6,
-    theme: "default",
-    gravity: 2,
-    mass: 1,
-    friction: 0.8,
-    restitution: 0.5,
-    linearDamping: 0.5,
-    angularDamping: 0.4,
-    settleTimeout: 5000,
-  });
+  try {
+    diceBox = new DiceBox("#dice-box", {
+      assetPath: "/dice-assets/assets/",
+      origin: "/dice-assets/",
+      scale: 6,
+      theme: "default",
+      gravity: 2,
+      mass: 1,
+      friction: 0.8,
+      restitution: 0.5,
+      linearDamping: 0.5,
+      angularDamping: 0.4,
+      settleTimeout: 5000,
+    });
 
-  await diceBox.init();
+    await diceBox.init();
+    diceReady = true;
+    console.log("[dice] dice-box initialized successfully");
+  } catch (err) {
+    console.error("[dice] dice-box init failed:", err);
+    diceReady = false;
+  }
+
+  // Signal to main.js that the dice modal is ready
+  await OBR.broadcast.sendMessage(`${CHANNEL}/ready`, { ready: diceReady });
 
   OBR.broadcast.onMessage(CHANNEL, async (event) => {
     const { notation, label, modifier, charName, rollId } = event.data;
-    if (isRolling) return;
+    if (isRolling) {
+      console.warn("[dice] Already rolling, skipping");
+      return;
+    }
     await performRoll(notation, label, modifier, charName, rollId);
   });
 });
@@ -42,8 +56,22 @@ async function performRoll(notation, label, modifier = 0, charName = "", rollId 
   rollLabel.classList.add("visible");
   resultDisplay.classList.remove("visible", "fade-out");
 
-  // Roll the 3D dice
-  const results = await diceBox.roll(notation);
+  let results;
+  try {
+    if (!diceReady || !diceBox) throw new Error("dice-box not ready");
+
+    // Race: dice roll vs 4s timeout
+    results = await Promise.race([
+      diceBox.roll(notation),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Dice roll timed out")), 4000)
+      ),
+    ]);
+  } catch (err) {
+    console.error("[dice] Roll failed, using fallback:", err.message);
+    // Generate fallback random result
+    results = fallbackRoll(notation);
+  }
 
   // SFX: dice landing
   playDiceHit();
@@ -111,7 +139,7 @@ async function performRoll(notation, label, modifier = 0, charName = "", rollId 
 
       setTimeout(async () => {
         resultDisplay.classList.remove("visible", "fade-out");
-        diceBox.clear();
+        try { diceBox?.clear(); } catch {}
         isRolling = false;
 
         // Close the modal so the battlemap is clickable again
@@ -120,4 +148,26 @@ async function performRoll(notation, label, modifier = 0, charName = "", rollId 
       }, 600);
     }, 2500);
   });
+}
+
+function fallbackRoll(notation) {
+  const results = [];
+  const parts = notation.replace(/\s/g, "").split("+");
+  for (const part of parts) {
+    const match = part.match(/^(\d+)d(\d+)$/);
+    if (match) {
+      const count = parseInt(match[1]);
+      const sides = parseInt(match[2]);
+      for (let i = 0; i < count; i++) {
+        results.push({
+          value: Math.floor(Math.random() * sides) + 1,
+          sides,
+        });
+      }
+    }
+  }
+  if (results.length === 0) {
+    results.push({ value: Math.floor(Math.random() * 20) + 1, sides: 20 });
+  }
+  return results;
 }

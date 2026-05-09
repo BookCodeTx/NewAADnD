@@ -706,12 +706,9 @@ OBR.onReady(async () => {
     else { hideAll(); resetCombat(); }
   });
 
-  // Listen for dice results
-  OBR.broadcast.onMessage(`${DICE_CHANNEL}/result`, (event) => {
+  // Listen for dice modal close (3D dice finished its animation)
+  OBR.broadcast.onMessage(`${DICE_CHANNEL}/result`, () => {
     diceModalOpen = false;
-    const result = event.data;
-    if (result.rollId !== pendingRollId) return;
-    handleDiceResult(result);
   });
 
   // Listen for initiative state changes from other players
@@ -1063,23 +1060,127 @@ async function syncInitiativeHP() {
 }
 
 // ════════════════════════════════════════
-// DICE HELPERS
+// DICE SYSTEM (self-contained, no modal dependency)
 // ════════════════════════════════════════
 
-async function ensureDiceModal() {
-  if (diceModalOpen) return;
-  await OBR.modal.open({ id: DICE_MODAL_ID, url: "/dice.html", fullScreen: true, hidePaper: true, hideBackdrop: true });
-  diceModalOpen = true;
-  await new Promise((r) => setTimeout(r, 800));
+const diceResultEl = document.getElementById("dice-result");
+const diceResultLabel = document.getElementById("dice-result-label");
+const diceResultValue = document.getElementById("dice-result-value");
+const diceResultDetail = document.getElementById("dice-result-detail");
+
+function rollDiceValues(notation) {
+  let diceTotal = 0;
+  let sides = 20;
+  let diceCount = 0;
+  const parts = notation.replace(/\s/g, "").split("+");
+  for (const part of parts) {
+    const match = part.match(/^(\d+)d(\d+)$/);
+    if (match) {
+      const count = parseInt(match[1]);
+      sides = parseInt(match[2]);
+      for (let i = 0; i < count; i++) {
+        diceTotal += Math.floor(Math.random() * sides) + 1;
+        diceCount++;
+      }
+    } else {
+      diceTotal += parseInt(part) || 0;
+    }
+  }
+  const isSingleD20 = notation.trim() === "1d20";
+  return { diceTotal, sides, diceCount, isSingleD20 };
+}
+
+function showDiceResultDisplay(label, result) {
+  const { diceTotal, modifier, finalTotal, natValue } = result;
+  const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
+  const detail = modifier !== 0 ? `${diceTotal}${modStr} = ${finalTotal}` : `${diceTotal}`;
+
+  diceResultLabel.textContent = label || "";
+
+  let extraText = "";
+  diceResultEl.className = "";
+  if (natValue === 20) { diceResultEl.classList.add("nat-crit"); extraText = " NAT 20!"; }
+  else if (natValue === 1) { diceResultEl.classList.add("nat-fail"); extraText = " NAT 1"; }
+
+  diceResultValue.textContent = finalTotal;
+  diceResultDetail.textContent = detail + extraText;
+  diceResultEl.classList.add("visible");
+
+  // Auto-hide after 2s
+  clearTimeout(diceResultEl._hideTimer);
+  diceResultEl._hideTimer = setTimeout(() => {
+    diceResultEl.classList.remove("visible", "nat-crit", "nat-fail");
+  }, 2500);
 }
 
 async function rollDice(notation, label, modifier = 0, rollId = null) {
-  await ensureDiceModal();
-  await OBR.broadcast.sendMessage(DICE_CHANNEL, {
-    notation, label, modifier,
+  const rid = rollId || crypto.randomUUID();
+  pendingRollId = rid;
+
+  // Generate result immediately — no modal dependency
+  const { diceTotal, isSingleD20 } = rollDiceValues(notation);
+  const finalTotal = diceTotal + modifier;
+  const natValue = isSingleD20 ? diceTotal : null;
+
+  const result = {
+    notation, diceTotal, modifier, finalTotal, natValue,
     charName: attackerData?.name || currentCharData?.name || "",
-    rollId: rollId || crypto.randomUUID(),
-  });
+    label, rollId: rid,
+  };
+
+  // SFX
+  playSfx("dice-hit");
+  if (natValue === 20) setTimeout(() => playSfx("crit"), 150);
+  else if (natValue === 1) setTimeout(() => playSfx("miss"), 150);
+
+  // Show result in popover
+  showDiceResultDisplay(label, result);
+
+  // Broadcast SFX to all players
+  const sfxName = natValue === 20 ? "crit" : natValue === 1 ? "miss" : "dice-hit";
+  OBR.broadcast.sendMessage(SFX_CHANNEL, { sound: sfxName }).catch(() => {});
+
+  // Notify all players
+  const modStr = modifier > 0 ? `+${modifier}` : modifier < 0 ? `${modifier}` : "";
+  const charName = result.charName;
+  const notifText = charName
+    ? `${charName} rolled ${notation}${modStr}: ${finalTotal}${natValue === 20 ? " (NAT 20!)" : natValue === 1 ? " (NAT 1)" : ""}`
+    : `Rolled ${notation}${modStr}: ${finalTotal}`;
+  OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
+
+  // Short dramatic pause, then process result
+  await new Promise((r) => setTimeout(r, 1000));
+
+  // Process combat result if this roll is still the pending one
+  if (pendingRollId === rid) {
+    if (combatState === COMBAT.ROLLING_ATTACK || combatState === COMBAT.ROLLING_DAMAGE) {
+      handleDiceResult(result);
+    }
+  }
+
+  // Try 3D dice modal in background (non-blocking, purely visual)
+  try3DDice(notation, label, modifier, rid);
+}
+
+function try3DDice(notation, label, modifier, rollId) {
+  // Fire-and-forget: open dice modal for visual flair only
+  // If it works, great. If not, combat already proceeded.
+  try {
+    if (!diceModalOpen) {
+      OBR.modal.open({ id: DICE_MODAL_ID, url: "/dice.html", fullScreen: true, hidePaper: true, hideBackdrop: true })
+        .then(() => {
+          diceModalOpen = true;
+          setTimeout(() => {
+            OBR.broadcast.sendMessage(DICE_CHANNEL, {
+              notation, label, modifier,
+              charName: attackerData?.name || currentCharData?.name || "",
+              rollId,
+            }).catch(() => {});
+          }, 1000);
+        })
+        .catch(() => {});
+    }
+  } catch {}
 }
 
 function getAttackMod(char) {
