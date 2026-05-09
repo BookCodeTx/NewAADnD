@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Damage Floater</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { background: transparent; overflow: hidden; width: 100vw; height: 100vh; pointer-events: none; }
+
+    .damage-float {
+      position: absolute;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-weight: 900;
+      font-size: 56px;
+      color: #e94560;
+      text-shadow:
+        0 0 12px rgba(233,69,96,0.9),
+        0 0 24px rgba(233,69,96,0.5),
+        3px 3px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      animation: floatUp 1.6s ease-out forwards;
+      white-space: nowrap;
+      z-index: 999;
+    }
+
+    .damage-float .dmg-type {
+      display: block;
+      font-size: 16px;
+      font-weight: 600;
+      text-align: center;
+      opacity: 0.8;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .damage-float.crit {
+      font-size: 76px;
+      color: #ffd700;
+      text-shadow:
+        0 0 16px rgba(255,215,0,1),
+        0 0 40px rgba(255,215,0,0.6),
+        3px 3px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+      animation: floatUpCrit 1.8s ease-out forwards;
+    }
+
+    .damage-float.heal {
+      color: #45e9a0;
+      text-shadow:
+        0 0 12px rgba(69,233,160,0.9),
+        0 0 24px rgba(69,233,160,0.5),
+        3px 3px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+    }
+
+    .damage-float.spell-dmg {
+      color: #a045e9;
+      text-shadow:
+        0 0 12px rgba(160,69,233,0.9),
+        0 0 24px rgba(160,69,233,0.5),
+        3px 3px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+    }
+
+    @keyframes floatUp {
+      0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.3); }
+      15%  { opacity: 1; transform: translate(-50%, -80%) scale(1.15); }
+      30%  { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -220%) scale(0.7); }
+    }
+
+    @keyframes floatUpCrit {
+      0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.2) rotate(-10deg); }
+      10%  { opacity: 1; transform: translate(-50%, -60%) scale(1.4) rotate(5deg); }
+      25%  { opacity: 1; transform: translate(-50%, -90%) scale(1.1) rotate(-2deg); }
+      40%  { opacity: 1; transform: translate(-50%, -120%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -260%) scale(0.6); }
+    }
+  </style>
+</head>
+<body>
+  <script type="module" src="/floater.js"></script>
+</body>
+</html>

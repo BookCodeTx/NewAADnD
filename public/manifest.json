@@ -1,0 +1,15 @@
+{
+  "name": "DnD Hotbar",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "author": "DnD Extension Dev",
+  "description": "RPG-style hotbar that appears when selecting a character token",
+  "icon": "/icon.svg",
+  "action": {
+    "title": "DnD Hotbar",
+    "icon": "/icon.svg",
+    "popover": "/index.html",
+    "height": 500,
+    "width": 540
+  }
+}

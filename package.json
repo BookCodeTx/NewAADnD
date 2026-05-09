@@ -1,0 +1,19 @@
+{
+  "name": "dnd-hotbar-extension",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@3d-dice/dice-box": "^1.1.4",
+    "@owlbear-rodeo/sdk": "^2.2.0"
+  },
+  "devDependencies": {
+    "vite": "^6.3.0",
+    "vite-plugin-static-copy": "^3.0.0"
+  }
+}

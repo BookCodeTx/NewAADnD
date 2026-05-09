@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DnD Hotbar</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0d0d1a; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; overflow-x: hidden; overflow-y: auto; user-select: none; padding: 0; }
+
+    /* ═══ INITIATIVE BAR ═══ */
+    #initiative-bar { position: sticky; top: 0; z-index: 100; width: 100%; background: linear-gradient(180deg, #0d0d1a, #111128); border-bottom: 2px solid #0f3460; padding: 4px 6px; display: none; flex-direction: column; gap: 4px; }
+    #initiative-bar.visible { display: flex; }
+    .init-header { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
+    .init-title { color: #e9a045; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+    .init-round { color: #8899aa; font-size: 10px; }
+    .init-controls { display: flex; gap: 4px; }
+    .init-ctrl-btn { padding: 2px 10px; border: 1px solid #0f3460; border-radius: 4px; background: #16213e; color: #c0c8d4; font-size: 9px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+    .init-ctrl-btn:hover { border-color: #e9a045; color: #e9a045; }
+    .init-ctrl-btn.primary { background: #e9a045; color: #0d0d1a; border-color: #e9a045; }
+    .init-ctrl-btn.primary:hover { background: #d4902a; }
+    .init-ctrl-btn.danger { color: #e94560; border-color: #e94560; }
+    .init-ctrl-btn.danger:hover { background: #e9456022; }
+    .init-track { display: flex; gap: 4px; overflow-x: auto; padding: 2px 0; scrollbar-width: thin; scrollbar-color: #333 transparent; }
+    .init-token { display: flex; flex-direction: column; align-items: center; min-width: 52px; padding: 3px 4px; border: 2px solid #1a2a4e; border-radius: 6px; background: #0f1828; cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
+    .init-token:hover { border-color: #e9a045; }
+    .init-token.active { border-color: #e9a045; background: linear-gradient(180deg, #2a1a00, #1a1200); box-shadow: 0 0 10px rgba(233,160,69,0.4); }
+    .init-token.dead { opacity: 0.4; }
+    .init-token .init-roll { font-size: 14px; font-weight: 800; color: #e9a045; }
+    .init-token .init-name { font-size: 7px; color: #8899aa; max-width: 48px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+    .init-token.active .init-name { color: #e9a045; }
+    .init-token .init-hp { font-size: 7px; color: #45e9a0; }
+    .init-token .init-hp.hurt { color: #e9a045; }
+    .init-token .init-hp.critical { color: #e94560; }
+    .init-token .init-hp.down { color: #666; }
+    .init-token .init-badge { font-size: 7px; padding: 0 3px; border-radius: 2px; background: #e9456033; color: #e94560; margin-top: 1px; }
+    .init-token .init-badge.monster { background: #a045e933; color: #a045e9; }
+    .init-token .init-conditions { display: flex; gap: 1px; margin-top: 1px; }
+    .init-token .cond-dot { font-size: 6px; }
+
+    /* ═══ MAIN CONTENT ═══ */
+    #main-content { padding: 4px 8px; display: flex; flex-direction: column; align-items: center; width: 100%; }
+
+    /* Token Name */
+    #token-name { color: #e94560; font-size: 11px; font-weight: 600; white-space: nowrap; text-shadow: 0 0 8px rgba(233,69,96,0.5); margin-bottom: 4px; min-height: 14px; }
+
+    /* Stats Bar */
+    #stats-bar { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; margin-bottom: 4px; }
+    #stats-bar.hidden { display: none; }
+    .stat-chip { display: flex; align-items: center; gap: 3px; padding: 2px 7px; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; font-size: 11px; color: #c0c8d4; }
+    .stat-chip.hp { background: linear-gradient(90deg, var(--hp-color) var(--hp-pct), #16213e var(--hp-pct)); font-weight: 600; color: #fff; }
+    .stat-chip .temp { color: #45a0e9; font-size: 10px; }
+    .stat-chip.ability { flex-direction: column; padding: 2px 5px; gap: 0; min-width: 36px; text-align: center; }
+    .ability-name { font-size: 8px; color: #8899aa; letter-spacing: 0.5px; }
+    .ability-val { font-size: 12px; font-weight: 700; color: #e0e0e0; }
+    .ability-mod { font-size: 9px; color: #e9a045; }
+    .stat-icon { font-size: 11px; }
+    .stat-divider { width: 1px; height: 20px; background: #0f3460; align-self: center; margin: 0 2px; }
+
+    /* Condition Badges */
+    #condition-bar { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; margin-bottom: 4px; }
+    #condition-bar.hidden { display: none; }
+    .cond-badge { display: flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 600; cursor: pointer; transition: all 0.15s; border: 1px solid; }
+    .cond-badge:hover { opacity: 0.7; }
+    .cond-badge .cond-x { font-size: 8px; margin-left: 2px; opacity: 0.6; }
+    .cond-badge .cond-x:hover { opacity: 1; }
+
+    /* Hotbar Buttons */
+    #hotbar { display: flex; gap: 5px; padding: 6px 8px; background: linear-gradient(180deg, #1a1a2e, #16213e); border: 2px solid #0f3460; border-radius: 12px; box-shadow: 0 0 16px rgba(233,69,96,0.3), inset 0 1px 0 rgba(255,255,255,0.05); transition: opacity 0.3s ease, transform 0.3s ease; flex-wrap: wrap; justify-content: center; }
+    #hotbar.hidden { opacity: 0; transform: translateY(20px); pointer-events: none; position: absolute; }
+    .hotbar-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 46px; height: 46px; background: linear-gradient(180deg, #16213e, #0f3460); border: 2px solid #0f3460; border-radius: 8px; color: #e0e0e0; cursor: pointer; transition: all 0.15s ease; }
+    .hotbar-btn:hover { border-color: #e94560; background: linear-gradient(180deg, #1a1a2e, #e94560 140%); transform: translateY(-3px); box-shadow: 0 4px 12px rgba(233,69,96,0.4); }
+    .hotbar-btn:active { transform: translateY(0); }
+    .hotbar-btn .icon { font-size: 18px; line-height: 1; }
+    .hotbar-btn .label { font-size: 7px; margin-top: 2px; letter-spacing: 0.5px; text-transform: uppercase; color: #8899aa; }
+    .hotbar-btn:hover .label { color: #fff; }
+    .hotbar-btn.attack { border-bottom: 3px solid #e94560; }
+    .hotbar-btn.skill { border-bottom: 3px solid #e9a045; }
+    .hotbar-btn.defend { border-bottom: 3px solid #45e9a0; }
+    .hotbar-btn.spell { border-bottom: 3px solid #a045e9; }
+    .hotbar-btn.item { border-bottom: 3px solid #45a0e9; }
+    .hotbar-btn.rest { border-bottom: 3px solid #e9e945; }
+    .hotbar-btn.refresh { border-bottom: 3px solid #aaaaaa; }
+    .hotbar-btn.conditions-btn { border-bottom: 3px solid #ff66aa; }
+    .hotbar-btn.active-action { border-color: #ffd700 !important; box-shadow: 0 0 12px rgba(255,215,0,0.6), inset 0 0 8px rgba(255,215,0,0.15); animation: pulse-gold 1.2s ease infinite; }
+    @keyframes pulse-gold { 0%, 100% { box-shadow: 0 0 8px rgba(255,215,0,0.4); } 50% { box-shadow: 0 0 18px rgba(255,215,0,0.8); } }
+
+    /* ═══ SPELL PICKER ═══ */
+    #spell-picker { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1028, #16102e); border: 2px solid #a045e9; border-radius: 10px; margin-top: 6px; }
+    #spell-picker.visible { display: block; }
+    .spell-picker-title { color: #a045e9; font-size: 11px; font-weight: 700; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+    .spell-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+    .spell-card { padding: 6px 8px; background: #0f1028; border: 1px solid #2a1a4e; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+    .spell-card:hover { border-color: #a045e9; background: #1a1038; }
+    .spell-card .spell-name { font-size: 11px; font-weight: 700; color: #d0b0f0; }
+    .spell-card .spell-info { font-size: 8px; color: #7766aa; margin-top: 2px; }
+    .spell-card .spell-tags { display: flex; gap: 3px; margin-top: 3px; }
+    .spell-tag { font-size: 7px; padding: 1px 4px; border-radius: 3px; }
+    .spell-tag.aoe { background: #e9456033; color: #e94560; }
+    .spell-tag.save { background: #e9a04533; color: #e9a045; }
+    .spell-tag.dmg { background: #a045e933; color: #a045e9; }
+    .spell-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #a045e944; border-radius: 4px; background: none; color: #a045e9; font-size: 10px; cursor: pointer; }
+    .spell-cancel:hover { background: #a045e922; }
+
+    /* ═══ CONDITION PICKER ═══ */
+    #condition-picker { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1020, #161020); border: 2px solid #ff66aa; border-radius: 10px; margin-top: 6px; }
+    #condition-picker.visible { display: block; }
+    .cond-picker-title { color: #ff66aa; font-size: 11px; font-weight: 700; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+    .cond-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+    .cond-card { padding: 5px 8px; background: #0f1020; border: 1px solid #331828; border-radius: 6px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
+    .cond-card:hover { border-color: #ff66aa; background: #1a1028; }
+    .cond-card.active-cond { border-color: #45e9a0; background: #0a2018; }
+    .cond-card .cond-icon { font-size: 14px; }
+    .cond-card .cond-info { flex: 1; }
+    .cond-card .cond-name { font-size: 10px; font-weight: 700; color: #d0a0c0; }
+    .cond-card .cond-desc { font-size: 7px; color: #776688; }
+    .cond-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #ff66aa44; border-radius: 4px; background: none; color: #ff66aa; font-size: 10px; cursor: pointer; }
+    .cond-cancel:hover { background: #ff66aa22; }
+
+    /* ═══ AoE RESULTS ═══ */
+    #aoe-results { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1028, #16102e); border: 2px solid #e94560; border-radius: 10px; margin-top: 6px; max-height: 200px; overflow-y: auto; }
+    #aoe-results.visible { display: block; }
+    .aoe-title { color: #e94560; font-size: 12px; font-weight: 700; text-align: center; margin-bottom: 6px; }
+    .aoe-target { padding: 4px 8px; background: #0f1020; border-radius: 4px; margin-bottom: 3px; font-size: 10px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid #333; }
+    .aoe-target.saved { border-left-color: #45e9a0; }
+    .aoe-target.failed { border-left-color: #e94560; }
+    .aoe-target .aoe-name { color: #c0c8d4; font-weight: 600; }
+    .aoe-target .aoe-save-result { color: #8899aa; }
+    .aoe-target .aoe-dmg { font-weight: 700; }
+    .aoe-target .aoe-dmg.full { color: #e94560; }
+    .aoe-target .aoe-dmg.half { color: #e9a045; }
+
+    /* ═══ LINK PANEL ═══ */
+    #link-panel { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 16px; background: linear-gradient(180deg, #1a1a2e, #16213e); border: 2px solid #0f3460; border-radius: 12px; width: 100%; max-width: 500px; }
+    #link-panel.hidden { display: none; }
+    .link-tabs { display: flex; gap: 2px; width: 100%; margin-bottom: 4px; }
+    .link-tab { flex: 1; padding: 4px 8px; border: 1px solid #0f3460; border-radius: 4px 4px 0 0; background: #0f1828; color: #667; font-size: 10px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s; }
+    .link-tab.active { background: #16213e; color: #e9a045; border-color: #e9a045; border-bottom: none; }
+    .link-content { width: 100%; }
+    .link-content.hidden { display: none; }
+    #link-status { color: #8899aa; font-size: 11px; text-align: center; margin-bottom: 4px; }
+    .link-row { display: flex; gap: 6px; width: 100%; }
+    #link-input, #monster-json { flex: 1; padding: 6px 10px; background: #0f3460; border: 1px solid #1a3a6e; border-radius: 6px; color: #e0e0e0; font-size: 12px; outline: none; min-width: 0; }
+    #link-input::placeholder, #monster-json::placeholder { color: #556677; }
+    #link-input:focus, #monster-json:focus { border-color: #e94560; }
+    #monster-json { width: 100%; min-height: 80px; resize: vertical; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 10px; line-height: 1.4; }
+    #link-btn, #unlink-btn, #monster-apply-btn { padding: 6px 14px; border: none; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    #link-btn, #monster-apply-btn { background: #e94560; color: #fff; }
+    #link-btn:hover, #monster-apply-btn:hover { background: #d13a54; }
+    #link-btn:disabled, #monster-apply-btn:disabled { background: #555; cursor: wait; }
+    #unlink-btn { background: #333; color: #aaa; font-size: 10px; }
+    #unlink-btn:hover { background: #444; }
+    #unlink-btn.hidden { display: none; }
+    #monster-status { color: #8899aa; font-size: 10px; margin-top: 4px; text-align: center; }
+    #monster-status.error { color: #e94560; font-weight: 600; }
+    #monster-status.success { color: #45e9a0; }
+    .monster-template-hint { font-size: 9px; color: #556677; margin-top: 2px; text-align: center; }
+
+    /* ═══ ERROR / COMBAT ═══ */
+    #error-banner { display: none; flex-direction: column; gap: 4px; padding: 10px 14px; background: linear-gradient(180deg, #3a1020, #2a0a18); border: 2px solid #e94560; border-radius: 10px; margin-bottom: 6px; max-width: 480px; animation: shake 0.4s ease; }
+    #error-banner.visible { display: flex; }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)} 40%{transform:translateX(4px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(2px)} }
+    #error-banner .error-title { color: #e94560; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+    #error-banner .error-hint { color: #d4a0a0; font-size: 11px; line-height: 1.4; }
+    #error-banner .error-dismiss { align-self: flex-end; background: none; border: 1px solid #e9456066; border-radius: 4px; color: #e94560; font-size: 10px; padding: 2px 10px; cursor: pointer; margin-top: 2px; }
+    #error-banner .error-dismiss:hover { background: #e9456022; }
+    #link-status.error { color: #e94560; font-weight: 600; }
+
+    #combat-overlay { display: none; flex-direction: column; align-items: center; gap: 4px; padding: 10px 16px; background: linear-gradient(180deg, #1a1020, #16102e); border: 2px solid #a045e9; border-radius: 10px; margin-top: 6px; max-width: 480px; animation: slide-up 0.3s ease; }
+    #combat-overlay.visible { display: flex; }
+    @keyframes slide-up { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    #combat-status { color: #a045e9; font-size: 13px; font-weight: 700; text-shadow: 0 0 10px rgba(160,69,233,0.5); }
+    #combat-detail { color: #b0a0c8; font-size: 11px; }
+    #combat-cancel { background: none; border: 1px solid #a045e966; border-radius: 4px; color: #a045e9; font-size: 10px; padding: 2px 12px; cursor: pointer; margin-top: 2px; }
+    #combat-cancel:hover { background: #a045e922; }
+
+    #combat-log { width: 100%; max-width: 500px; max-height: 120px; overflow-y: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+    #combat-log.hidden { display: none; }
+    .log-entry { padding: 3px 8px; border-radius: 4px; font-size: 10px; color: #8899aa; background: #0f1020; border-left: 3px solid #333; line-height: 1.5; }
+    .log-entry.log-hit { border-left-color: #45e9a0; } .log-entry.log-crit { border-left-color: #ffd700; color: #ffd700; }
+    .log-entry.log-miss { border-left-color: #e94560; } .log-entry.log-damage { border-left-color: #e9a045; }
+    .log-entry.log-init { border-left-color: #e9a045; color: #e9a045; }
+    .log-entry.log-spell { border-left-color: #a045e9; color: #d0b0f0; }
+    .log-entry.log-condition { border-left-color: #ff66aa; color: #ff99cc; }
+    .log-entry .crit{color:#ffd700} .log-entry .hit{color:#45e9a0} .log-entry .miss{color:#e94560} .log-entry .damage{color:#e9a045}
+    #combat-log::-webkit-scrollbar{width:4px} #combat-log::-webkit-scrollbar-track{background:transparent} #combat-log::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+  </style>
+</head>
+<body>
+  <!-- ═══ Initiative Tracker ═══ -->
+  <div id="initiative-bar">
+    <div class="init-header">
+      <span class="init-title">Initiative</span>
+      <span class="init-round" id="init-round">Round 1</span>
+      <div class="init-controls">
+        <button class="init-ctrl-btn" id="init-roll-btn">Roll Initiative</button>
+        <button class="init-ctrl-btn primary" id="init-next-btn">Next Turn</button>
+        <button class="init-ctrl-btn danger" id="init-end-btn">End Combat</button>
+      </div>
+    </div>
+    <div class="init-track" id="init-track"></div>
+  </div>
+
+  <div id="main-content">
+    <div id="error-banner">
+      <div class="error-title"><span>⚠️</span> <span id="error-title-text"></span></div>
+      <div class="error-hint" id="error-hint-text"></div>
+      <button class="error-dismiss" id="error-dismiss">ปิด</button>
+    </div>
+
+    <div id="token-name"></div>
+    <div id="condition-bar" class="hidden"></div>
+    <div id="stats-bar"></div>
+
+    <!-- Hotbar -->
+    <div id="hotbar">
+      <button class="hotbar-btn attack" data-action="attack"><span class="icon">⚔️</span><span class="label">Attack</span></button>
+      <button class="hotbar-btn skill" data-action="skill"><span class="icon">✨</span><span class="label">Skill</span></button>
+      <button class="hotbar-btn defend" data-action="defend"><span class="icon">🛡️</span><span class="label">Defend</span></button>
+      <button class="hotbar-btn spell" data-action="spell"><span class="icon">🔮</span><span class="label">Spell</span></button>
+      <button class="hotbar-btn item" data-action="item"><span class="icon">🧪</span><span class="label">Item</span></button>
+      <button class="hotbar-btn conditions-btn" data-action="conditions"><span class="icon">🏷️</span><span class="label">Status</span></button>
+      <button class="hotbar-btn rest" data-action="rest"><span class="icon">💤</span><span class="label">Rest</span></button>
+      <button class="hotbar-btn refresh" id="refresh-btn"><span class="icon">🔄</span><span class="label">Sync</span></button>
+    </div>
+
+    <!-- Spell Picker -->
+    <div id="spell-picker">
+      <div class="spell-picker-title">Select a Spell</div>
+      <div class="spell-grid" id="spell-grid"></div>
+      <button class="spell-cancel" id="spell-cancel">Cancel</button>
+    </div>
+
+    <!-- Condition Picker -->
+    <div id="condition-picker">
+      <div class="cond-picker-title">Toggle Condition</div>
+      <div class="cond-grid" id="cond-grid"></div>
+      <button class="cond-cancel" id="cond-cancel">Close</button>
+    </div>
+
+    <!-- AoE Results -->
+    <div id="aoe-results">
+      <div class="aoe-title" id="aoe-title"></div>
+      <div id="aoe-target-list"></div>
+    </div>
+
+    <!-- Link Panel -->
+    <div id="link-panel">
+      <div id="link-status">Select a token to link a character.</div>
+      <div class="link-tabs">
+        <div class="link-tab active" data-tab="dndbeyond">D&D Beyond</div>
+        <div class="link-tab" data-tab="monster">Monster JSON</div>
+      </div>
+      <div class="link-content" id="tab-dndbeyond">
+        <div class="link-row">
+          <input id="link-input" type="text" placeholder="D&D Beyond ID or URL..." />
+          <button id="link-btn">Link</button>
+        </div>
+      </div>
+      <div class="link-content hidden" id="tab-monster">
+        <textarea id="monster-json" placeholder='{"name":"Goblin","ac":15,"hp":7,"speed":30,"stats":{"str":8,"dex":14,"con":10,"int":10,"wis":8,"cha":8},"actions":[{"name":"Scimitar","damage":"1d6+2","type":"Martial Melee"}]}'></textarea>
+        <div style="display:flex;gap:6px;margin-top:4px;justify-content:center">
+          <button id="monster-apply-btn">Apply to Token</button>
+          <button id="unlink-btn" class="hidden">Unlink</button>
+        </div>
+        <div id="monster-status"></div>
+        <div class="monster-template-hint">Paste monster stat block as JSON</div>
+      </div>
+    </div>
+
+    <!-- Combat Overlay -->
+    <div id="combat-overlay">
+      <div id="combat-status"></div>
+      <div id="combat-detail"></div>
+      <button id="combat-cancel">Cancel</button>
+    </div>
+
+    <!-- Combat Log -->
+    <div id="combat-log" class="hidden"></div>
+  </div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
