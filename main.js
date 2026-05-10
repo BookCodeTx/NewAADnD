@@ -50,6 +50,14 @@ const monsterJson = document.getElementById("monster-json");
 const monsterApplyBtn = document.getElementById("monster-apply-btn");
 const monsterStatus = document.getElementById("monster-status");
 
+// HP Editor
+const hpEditor = document.getElementById("hp-editor");
+const hpEditorCurrent = document.getElementById("hp-editor-current");
+const hpAmountInput = document.getElementById("hp-amount");
+const hpSetInput = document.getElementById("hp-set");
+const hpMaxInput = document.getElementById("hp-max");
+const hpTempInput = document.getElementById("hp-temp");
+
 // Initiative
 const initiativeBar = document.getElementById("initiative-bar");
 const initTrack = document.getElementById("init-track");
@@ -373,6 +381,124 @@ async function broadcastSfx(sound) {
   playSfx(sound);
   await OBR.broadcast.sendMessage(SFX_CHANNEL, { sound });
 }
+
+// ════════════════════════════════════════
+// HP EDITOR (manual GM control)
+// ════════════════════════════════════════
+
+function openHpEditor() {
+  if (!currentCharData) return;
+  refreshHpEditor();
+  hpEditor.classList.add("visible");
+}
+
+function refreshHpEditor() {
+  if (!currentCharData) return;
+  const hp = currentCharData.hp;
+  hpEditorCurrent.innerHTML = `Current: <strong>${hp.current}</strong>/<span class="max-val">${hp.max}</span>${hp.temp ? ` <span style="color:#45a0e9">+${hp.temp} temp</span>` : ""}`;
+  hpSetInput.placeholder = String(hp.current);
+  hpMaxInput.placeholder = String(hp.max);
+  hpTempInput.placeholder = String(hp.temp || 0);
+}
+
+async function applyHpChange(newCurrent, newMax = null, newTemp = null, label = "HP changed") {
+  if (!currentTokenId || !currentCharData) return;
+
+  const oldCurrent = currentCharData.hp.current;
+  const oldMax = currentCharData.hp.max;
+
+  const finalMax = newMax !== null ? Math.max(1, newMax) : oldMax;
+  const finalCurrent = Math.max(0, Math.min(newCurrent, finalMax));
+  const finalTemp = newTemp !== null ? Math.max(0, newTemp) : (currentCharData.hp.temp || 0);
+
+  await OBR.scene.items.updateItems([currentTokenId], (items) => {
+    for (const item of items) {
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta?.character) return;
+      meta.character.hp.current = finalCurrent;
+      meta.character.hp.max = finalMax;
+      meta.character.hp.temp = finalTemp;
+      meta.lastUpdated = Date.now();
+    }
+  });
+
+  // Update local state
+  currentCharData.hp.current = finalCurrent;
+  currentCharData.hp.max = finalMax;
+  currentCharData.hp.temp = finalTemp;
+
+  // Refresh UI
+  showHotbar(currentCharData);
+  refreshHpEditor();
+  await syncInitiativeHP();
+
+  // Show floating damage/heal if HP changed
+  const delta = finalCurrent - oldCurrent;
+  if (delta !== 0) {
+    const isHeal = delta > 0;
+    await broadcastSfx(isHeal ? "heal" : "damage");
+    await showFloatingDamage(currentTokenId, Math.abs(delta), null, { isHeal });
+  }
+
+  logCombat(`<strong>${currentCharData.name}</strong> ${label}: <strong>${oldCurrent}</strong>→<strong>${finalCurrent}</strong>/${finalMax} HP`, isHealLog(delta));
+  await OBR.notification.show(`${currentCharData.name}: ${label} (${finalCurrent}/${finalMax})`, "INFO");
+}
+
+function isHealLog(delta) {
+  if (delta > 0) return "info";
+  if (delta < 0) return "damage";
+  return "info";
+}
+
+document.getElementById("hp-btn-damage").addEventListener("click", async () => {
+  const amt = parseInt(hpAmountInput.value) || 0;
+  if (amt <= 0) return;
+  let remaining = amt;
+  let temp = currentCharData.hp.temp || 0;
+  if (temp > 0) {
+    const absorbed = Math.min(temp, remaining);
+    temp -= absorbed;
+    remaining -= absorbed;
+  }
+  await applyHpChange(currentCharData.hp.current - remaining, null, temp, `−${amt} damage`);
+});
+
+document.getElementById("hp-btn-heal").addEventListener("click", async () => {
+  const amt = parseInt(hpAmountInput.value) || 0;
+  if (amt <= 0) return;
+  await applyHpChange(currentCharData.hp.current + amt, null, null, `+${amt} healed`);
+});
+
+document.getElementById("hp-btn-set").addEventListener("click", async () => {
+  const val = parseInt(hpSetInput.value);
+  if (isNaN(val)) return;
+  await applyHpChange(val, null, null, `set HP to ${val}`);
+  hpSetInput.value = "";
+});
+
+document.getElementById("hp-btn-full").addEventListener("click", async () => {
+  await applyHpChange(currentCharData.hp.max, null, null, "fully healed");
+});
+
+document.getElementById("hp-btn-max").addEventListener("click", async () => {
+  const val = parseInt(hpMaxInput.value);
+  if (isNaN(val) || val < 1) return;
+  // When raising max, keep current. When lowering max below current, clamp current.
+  const newCurrent = Math.min(currentCharData.hp.current, val);
+  await applyHpChange(newCurrent, val, null, `max HP set to ${val}`);
+  hpMaxInput.value = "";
+});
+
+document.getElementById("hp-btn-temp").addEventListener("click", async () => {
+  const val = parseInt(hpTempInput.value);
+  if (isNaN(val) || val < 0) return;
+  await applyHpChange(currentCharData.hp.current, null, val, `temp HP set to ${val}`);
+  hpTempInput.value = "";
+});
+
+document.getElementById("hp-btn-close").addEventListener("click", () => {
+  hpEditor.classList.remove("visible");
+});
 
 // ════════════════════════════════════════
 // CONDITION SYSTEM
@@ -1259,9 +1385,16 @@ function showHotbar(char) {
 
   hotbar.classList.remove("hidden");
   statsBar.classList.remove("hidden");
+
+  // Make HP chip clickable to open editor
+  const hpChip = statsBar.querySelector(".stat-chip.hp");
+  if (hpChip) {
+    hpChip.addEventListener("click", openHpEditor);
+    hpChip.title = "Click to edit HP";
+  }
 }
 
-function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("hidden"); conditionBar.classList.add("hidden"); tokenNameEl.textContent = ""; currentCharData = null; currentConditions = []; }
+function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("hidden"); conditionBar.classList.add("hidden"); hpEditor.classList.remove("visible"); tokenNameEl.textContent = ""; currentCharData = null; currentConditions = []; }
 
 function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideAoeResults(); currentTokenId = null; }
 

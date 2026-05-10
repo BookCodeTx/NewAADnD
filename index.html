@@ -130,6 +130,30 @@
     .aoe-target .aoe-dmg.full { color: #e94560; }
     .aoe-target .aoe-dmg.half { color: #e9a045; }
 
+    /* ═══ HP EDITOR ═══ */
+    .stat-chip.hp { cursor: pointer; transition: transform 0.1s; }
+    .stat-chip.hp:hover { transform: scale(1.05); box-shadow: 0 0 8px rgba(233,69,96,0.5); }
+    #hp-editor { display: none; width: 100%; max-width: 500px; padding: 10px; background: linear-gradient(180deg, #2a1020, #1a0d18); border: 2px solid #e94560; border-radius: 10px; margin-top: 6px; }
+    #hp-editor.visible { display: block; }
+    .hp-editor-title { color: #e94560; font-size: 11px; font-weight: 700; text-align: center; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .hp-editor-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .hp-editor-row label { color: #c0c8d4; font-size: 10px; min-width: 40px; }
+    .hp-editor-row input { flex: 1; padding: 4px 8px; background: #0f1828; border: 1px solid #1a3a6e; border-radius: 4px; color: #fff; font-size: 12px; outline: none; min-width: 0; text-align: center; }
+    .hp-editor-row input:focus { border-color: #e94560; }
+    .hp-editor-row button { padding: 4px 10px; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    .hp-btn-damage { background: #e94560; color: #fff; }
+    .hp-btn-damage:hover { background: #d13a54; }
+    .hp-btn-heal { background: #45e9a0; color: #0d0d1a; }
+    .hp-btn-heal:hover { background: #3ad08a; }
+    .hp-btn-set { background: #4488e9; color: #fff; }
+    .hp-btn-set:hover { background: #3a78d4; }
+    .hp-btn-full { background: #e9a045; color: #0d0d1a; }
+    .hp-btn-full:hover { background: #d49035; }
+    .hp-btn-close { width: 100%; margin-top: 4px; padding: 4px; border: 1px solid #e9456044; border-radius: 4px; background: none; color: #e94560; font-size: 10px; cursor: pointer; }
+    .hp-btn-close:hover { background: #e9456022; }
+    .hp-editor-current { text-align: center; color: #fff; font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+    .hp-editor-current .max-val { color: #8899aa; font-weight: 400; }
+
     /* ═══ DICE RESULT ═══ */
     #dice-result { display: none; width: 100%; max-width: 500px; padding: 12px; background: linear-gradient(180deg, #1a102e, #0d0d1a); border: 2px solid #e94560; border-radius: 12px; margin-top: 6px; text-align: center; animation: dice-pop 0.4s cubic-bezier(0.34,1.56,0.64,1); }
     #dice-result.visible { display: block; }
@@ -278,6 +302,35 @@
         <div id="monster-status"></div>
         <div class="monster-template-hint">Paste monster stat block as JSON</div>
       </div>
+    </div>
+
+    <!-- HP Editor -->
+    <div id="hp-editor">
+      <div class="hp-editor-title">❤️ Edit HP</div>
+      <div class="hp-editor-current" id="hp-editor-current"></div>
+      <div class="hp-editor-row">
+        <label>Amount:</label>
+        <input type="number" id="hp-amount" value="5" min="0" />
+        <button class="hp-btn-damage" id="hp-btn-damage">− Damage</button>
+        <button class="hp-btn-heal" id="hp-btn-heal">+ Heal</button>
+      </div>
+      <div class="hp-editor-row">
+        <label>Set HP:</label>
+        <input type="number" id="hp-set" placeholder="Current HP" />
+        <button class="hp-btn-set" id="hp-btn-set">Set</button>
+        <button class="hp-btn-full" id="hp-btn-full">Full Heal</button>
+      </div>
+      <div class="hp-editor-row">
+        <label>Max HP:</label>
+        <input type="number" id="hp-max" placeholder="Max HP" />
+        <button class="hp-btn-set" id="hp-btn-max">Set Max</button>
+      </div>
+      <div class="hp-editor-row">
+        <label>Temp HP:</label>
+        <input type="number" id="hp-temp" placeholder="Temp HP" min="0" />
+        <button class="hp-btn-heal" id="hp-btn-temp">Set Temp</button>
+      </div>
+      <button class="hp-btn-close" id="hp-btn-close">Close</button>
     </div>
 
     <!-- Dice Result Display -->
