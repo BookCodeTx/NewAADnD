@@ -35,6 +35,21 @@ const spellPicker = document.getElementById("spell-picker");
 const spellGrid = document.getElementById("spell-grid");
 const spellCancel = document.getElementById("spell-cancel");
 
+// Action picker (weapons)
+const actionPicker = document.getElementById("action-picker");
+const actionGrid = document.getElementById("action-grid");
+const actionCancel = document.getElementById("action-cancel");
+
+// Skill picker
+const skillPicker = document.getElementById("skill-picker");
+const skillGrid = document.getElementById("skill-grid");
+const skillCancel = document.getElementById("skill-cancel");
+
+// Bonus action picker
+const bonusPicker = document.getElementById("bonus-picker");
+const bonusGrid = document.getElementById("bonus-grid");
+const bonusCancel = document.getElementById("bonus-cancel");
+
 // Condition picker
 const conditionPicker = document.getElementById("condition-picker");
 const condGrid = document.getElementById("cond-grid");
@@ -83,6 +98,7 @@ let targetData = null;
 let pendingRollId = null;
 let attackRollResult = null;
 let selectedSpell = null;
+let selectedWeapon = null;
 let floaterModalOpen = false;
 
 const FLOATER_CHANNEL = "com.dnd-hotbar/floater";
@@ -128,10 +144,13 @@ function resetCombat() {
   pendingRollId = null;
   attackRollResult = null;
   selectedSpell = null;
+  selectedWeapon = null;
   diceModalOpen = false;
   floaterModalOpen = false;
   hideCombatOverlay();
   hideSpellPicker();
+  hideActionPicker();
+  hideBonusPicker();
   hideAoeResults();
   document.querySelectorAll(".hotbar-btn").forEach((b) => b.classList.remove("active-action"));
 }
@@ -195,6 +214,194 @@ function onSpellSelected(key, spell) {
     showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token...");
     logCombat(`<strong>${attackerData.name}</strong> prepares <strong>${spell.name}</strong>`, "spell");
   }
+}
+
+// ════════════════════════════════════════
+// ACTION PICKER (Weapons)
+// ════════════════════════════════════════
+
+function calcWeaponAttackMod(char, weapon) {
+  const isFinesse = weapon.properties?.includes("Finesse");
+  const isRanged = weapon.type?.includes("Ranged");
+  const str = char.stats.find((s) => s.name === "STR")?.modifier || 0;
+  const dex = char.stats.find((s) => s.name === "DEX")?.modifier || 0;
+  const ability = isRanged ? dex : isFinesse ? Math.max(str, dex) : str;
+  return ability + char.proficiencyBonus;
+}
+
+function buildActionGrid() {
+  actionGrid.innerHTML = "";
+  const weapons = currentCharData?.weapons || [];
+
+  if (weapons.length === 0) {
+    // Unarmed strike fallback
+    const str = currentCharData.stats.find((s) => s.name === "STR")?.modifier || 0;
+    const card = document.createElement("div");
+    card.className = "action-card";
+    card.innerHTML = `
+      <div>
+        <div class="action-name">👊 Unarmed Strike</div>
+        <div class="action-info">Melee · 5ft</div>
+      </div>
+      <div class="action-stats">
+        <span class="action-stat atk">+${str + currentCharData.proficiencyBonus}</span>
+        <span class="action-stat dmg">1+${str}</span>
+      </div>`;
+    card.addEventListener("click", () => onWeaponSelected({ name: "Unarmed", damage: "1d1", damageType: "Bludgeoning", type: "Simple Melee", properties: [], range: "5" }));
+    actionGrid.appendChild(card);
+    return;
+  }
+
+  for (const w of weapons) {
+    const atkMod = calcWeaponAttackMod(currentCharData, w);
+    const isRanged = w.type?.includes("Ranged");
+    const isFinesse = w.properties?.includes("Finesse");
+    const str = currentCharData.stats.find((s) => s.name === "STR")?.modifier || 0;
+    const dex = currentCharData.stats.find((s) => s.name === "DEX")?.modifier || 0;
+    const dmgMod = isRanged ? dex : isFinesse ? Math.max(str, dex) : str;
+
+    const card = document.createElement("div");
+    card.className = "action-card";
+    const equipBadge = w.equipped ? " ⚔️" : "";
+    const propStr = w.properties?.length ? w.properties.join(", ") : "—";
+    card.innerHTML = `
+      <div style="flex:1; min-width:0">
+        <div class="action-name">${w.name}${equipBadge}</div>
+        <div class="action-info">${w.type} · ${w.range}ft · ${propStr}</div>
+      </div>
+      <div class="action-stats">
+        <span class="action-stat atk">${atkMod >= 0 ? "+" : ""}${atkMod}</span>
+        <span class="action-stat dmg">${w.damage}${dmgMod >= 0 ? "+" : ""}${dmgMod}</span>
+      </div>`;
+    card.addEventListener("click", () => onWeaponSelected(w));
+    actionGrid.appendChild(card);
+  }
+}
+
+function showActionPicker() {
+  buildActionGrid();
+  actionPicker.classList.add("visible");
+  hideOtherPickers("action");
+}
+
+function hideActionPicker() { actionPicker.classList.remove("visible"); }
+
+function onWeaponSelected(weapon) {
+  selectedWeapon = weapon;
+  hideActionPicker();
+  combatState = COMBAT.TARGETING;
+  combatAction = "attack";
+  attackerData = { ...currentCharData };
+  attackerTokenId = currentTokenId;
+  document.querySelector(".hotbar-btn.attack")?.classList.add("active-action");
+  showCombatOverlay(`${attackerData.name}: ${weapon.name}`, "Click on enemy token to attack...");
+  logCombat(`<strong>${attackerData.name}</strong> readies <strong>${weapon.name}</strong>`);
+}
+
+actionCancel.addEventListener("click", () => { hideActionPicker(); resetCombat(); });
+
+// ════════════════════════════════════════
+// SKILL PICKER
+// ════════════════════════════════════════
+
+function buildSkillGrid() {
+  skillGrid.innerHTML = "";
+  const skills = currentCharData?.skills || [];
+  if (skills.length === 0) { skillGrid.innerHTML = '<div style="color:#8899aa;font-size:10px;text-align:center;padding:8px;grid-column:span 2">No skills available</div>'; return; }
+
+  // Sort: expertise first, proficient next, rest by name
+  const sorted = [...skills].sort((a, b) => {
+    if (a.expertise !== b.expertise) return b.expertise - a.expertise;
+    if (a.proficient !== b.proficient) return b.proficient - a.proficient;
+    return a.name.localeCompare(b.name);
+  });
+
+  for (const s of sorted) {
+    const card = document.createElement("div");
+    card.className = "skill-card" + (s.expertise ? " expertise" : s.proficient ? " proficient" : "");
+    card.innerHTML = `
+      <div>
+        <div class="skill-name">${s.name}</div>
+        <div class="skill-ability">${s.ability}${s.expertise ? " • EXP" : s.proficient ? " • PROF" : ""}</div>
+      </div>
+      <div class="skill-mod">${s.modifier >= 0 ? "+" : ""}${s.modifier}</div>`;
+    card.addEventListener("click", () => onSkillSelected(s));
+    skillGrid.appendChild(card);
+  }
+}
+
+function showSkillPicker() {
+  buildSkillGrid();
+  skillPicker.classList.add("visible");
+  hideOtherPickers("skill");
+}
+
+function hideSkillPicker() { skillPicker.classList.remove("visible"); }
+
+async function onSkillSelected(skill) {
+  hideSkillPicker();
+  await rollDice("1d20", `${currentCharData.name} ${skill.name}`, skill.modifier);
+}
+
+skillCancel.addEventListener("click", hideSkillPicker);
+
+// ════════════════════════════════════════
+// BONUS ACTION PICKER
+// ════════════════════════════════════════
+
+function buildBonusGrid() {
+  bonusGrid.innerHTML = "";
+  const actions = currentCharData?.bonusActions || [];
+  if (actions.length === 0) { bonusGrid.innerHTML = '<div style="color:#8899aa;font-size:10px;text-align:center;padding:8px">No bonus actions available for this class</div>'; return; }
+
+  for (const a of actions) {
+    const card = document.createElement("div");
+    card.className = "bonus-card";
+    card.innerHTML = `<div class="bonus-name">${a.name}</div><div class="bonus-desc">${a.description}</div>`;
+    card.addEventListener("click", () => onBonusSelected(a));
+    bonusGrid.appendChild(card);
+  }
+}
+
+function showBonusPicker() {
+  buildBonusGrid();
+  bonusPicker.classList.add("visible");
+  hideOtherPickers("bonus");
+}
+
+function hideBonusPicker() { bonusPicker.classList.remove("visible"); }
+
+async function onBonusSelected(action) {
+  hideBonusPicker();
+  logCombat(`⚡ <strong>${currentCharData.name}</strong> uses bonus action: <strong>${action.name}</strong>`, "info");
+
+  if (action.type === "attack" && action.weapon) {
+    selectedWeapon = action.weapon;
+    combatState = COMBAT.TARGETING;
+    combatAction = "attack";
+    attackerData = { ...currentCharData };
+    attackerTokenId = currentTokenId;
+    document.querySelector(".hotbar-btn.bonus")?.classList.add("active-action");
+    showCombatOverlay(`${attackerData.name}: ${action.name}`, "Click target token...");
+  } else if (action.type === "skill" && action.skill) {
+    const skill = currentCharData.skills?.find((s) => s.key === action.skill);
+    if (skill) await rollDice("1d20", `${currentCharData.name} ${action.name}`, skill.modifier);
+  } else if (action.type === "heal" && action.healDice) {
+    const lvl = currentCharData.level || 1;
+    await rollDice(action.healDice, `${currentCharData.name} ${action.name}`, lvl);
+  } else {
+    await OBR.notification.show(`${currentCharData.name}: ${action.name} declared`, "INFO");
+  }
+}
+
+bonusCancel.addEventListener("click", hideBonusPicker);
+
+function hideOtherPickers(except) {
+  if (except !== "spell") spellPicker.classList.remove("visible");
+  if (except !== "action") actionPicker.classList.remove("visible");
+  if (except !== "skill") skillPicker.classList.remove("visible");
+  if (except !== "bonus") bonusPicker.classList.remove("visible");
+  if (except !== "condition") conditionPicker.classList.remove("visible");
 }
 
 // ════════════════════════════════════════
@@ -667,6 +874,7 @@ function normalizeMonster(m) {
 
   const totalLevel = m.cr ? Math.max(1, Math.round(m.cr)) : 1;
 
+  const profBonus = Math.ceil(totalLevel / 4) + 1;
   return {
     id: null,
     name: m.name,
@@ -677,10 +885,49 @@ function normalizeMonster(m) {
     hp: { current: hp, max: hp, temp: 0 },
     stats,
     ac: m.ac ?? 10 + dexMod,
-    proficiencyBonus: Math.ceil(totalLevel / 4) + 1,
+    proficiencyBonus: profBonus,
     speed: m.speed ?? 30,
     weapons,
+    skills: defaultSkills(stats, profBonus, m.skills || []),
+    bonusActions: m.bonusActions || [],
   };
+}
+
+const SKILL_DEFS = [
+  { key: "acrobatics", name: "Acrobatics", ability: "DEX" },
+  { key: "animal-handling", name: "Animal Handling", ability: "WIS" },
+  { key: "arcana", name: "Arcana", ability: "INT" },
+  { key: "athletics", name: "Athletics", ability: "STR" },
+  { key: "deception", name: "Deception", ability: "CHA" },
+  { key: "history", name: "History", ability: "INT" },
+  { key: "insight", name: "Insight", ability: "WIS" },
+  { key: "intimidation", name: "Intimidation", ability: "CHA" },
+  { key: "investigation", name: "Investigation", ability: "INT" },
+  { key: "medicine", name: "Medicine", ability: "WIS" },
+  { key: "nature", name: "Nature", ability: "INT" },
+  { key: "perception", name: "Perception", ability: "WIS" },
+  { key: "performance", name: "Performance", ability: "CHA" },
+  { key: "persuasion", name: "Persuasion", ability: "CHA" },
+  { key: "religion", name: "Religion", ability: "INT" },
+  { key: "sleight-of-hand", name: "Sleight of Hand", ability: "DEX" },
+  { key: "stealth", name: "Stealth", ability: "DEX" },
+  { key: "survival", name: "Survival", ability: "WIS" },
+];
+
+function defaultSkills(stats, profBonus, profKeys = []) {
+  const profSet = new Set(profKeys);
+  return SKILL_DEFS.map((s) => {
+    const abilityMod = stats.find((st) => st.name === s.ability)?.modifier || 0;
+    const isProf = profSet.has(s.key);
+    return {
+      key: s.key,
+      name: s.name,
+      ability: s.ability,
+      modifier: abilityMod + (isProf ? profBonus : 0),
+      proficient: isProf,
+      expertise: false,
+    };
+  });
 }
 
 // ════════════════════════════════════════
@@ -933,10 +1180,8 @@ async function handleSelectionChange() {
 function enterTargeting(action) {
   if (!currentCharData || !currentTokenId) return;
 
-  if (action === "spell") {
-    showSpellPicker();
-    return;
-  }
+  if (action === "spell") { showSpellPicker(); return; }
+  if (action === "attack") { showActionPicker(); return; }
 
   combatState = COMBAT.TARGETING;
   combatAction = action;
@@ -963,7 +1208,7 @@ async function pickTarget(targetToken) {
   logCombat(`<strong>${attackerData.name}</strong> targets <strong>${targetName}</strong> (AC ${targetAC})`);
 
   combatState = COMBAT.ROLLING_ATTACK;
-  const weapon = attackerData.weapons?.find((w) => w.equipped) || attackerData.weapons?.[0];
+  const weapon = selectedWeapon || attackerData.weapons?.find((w) => w.equipped) || attackerData.weapons?.[0];
   let modifier, label;
 
   // Apply condition penalties to attack rolls
@@ -977,9 +1222,9 @@ async function pickTarget(targetToken) {
     modifier = Math.max(intMod, wisMod, chaMod) + attackerData.proficiencyBonus;
     label = `${attackerData.name} Spell Attack → ${targetName}`;
   } else {
-    modifier = getAttackMod(attackerData);
+    modifier = weapon ? calcWeaponAttackMod(attackerData, weapon) : getAttackMod(attackerData);
     const weaponName = weapon?.name || "Unarmed";
-    label = `${attackerData.name} attacks ${targetName} with ${weaponName}`;
+    label = `${attackerData.name} → ${targetName} (${weaponName})`;
   }
 
   modifier += penalty + bonus;
@@ -1101,7 +1346,7 @@ async function resolveAttackRoll(result) {
     damageMod = 0;
     damageLabel = `${attackerData.name} Spell Damage`;
   } else {
-    const weapon = attackerData.weapons?.find((w) => w.equipped) || attackerData.weapons?.[0];
+    const weapon = selectedWeapon || attackerData.weapons?.find((w) => w.equipped) || attackerData.weapons?.[0];
     const baseDamage = weapon?.damage || "1d4";
     if (isCrit) {
       const match = baseDamage.match(/^(\d+)d(\d+)$/);
@@ -1396,7 +1641,7 @@ function showHotbar(char) {
 
 function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("hidden"); conditionBar.classList.add("hidden"); hpEditor.classList.remove("visible"); tokenNameEl.textContent = ""; currentCharData = null; currentConditions = []; }
 
-function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideAoeResults(); currentTokenId = null; }
+function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideBonusPicker(); hideAoeResults(); currentTokenId = null; }
 
 function showLinkPanel(name) {
   linkStatus.textContent = `"${name}" has no character linked.`;
@@ -1410,9 +1655,7 @@ function showLinkPanel(name) {
 
 const COMBAT_ACTIONS = ["attack", "spell"];
 const NON_COMBAT_ROLLS = {
-  skill: (char) => ({ notation: "1d20", label: `${char.name} Skill Check`, modifier: 0 }),
   defend: (char) => ({ notation: "1d20", label: `${char.name} Saving Throw`, modifier: 0 }),
-  item: (char) => ({ notation: "1d20", label: `${char.name} Item Use`, modifier: 0 }),
   rest: (char) => {
     const conMod = char.stats.find((s) => s.name === "CON")?.modifier || 0;
     return { notation: "1d10", label: `${char.name} Hit Die (Rest)`, modifier: conMod };
@@ -1427,6 +1670,18 @@ document.querySelectorAll(".hotbar-btn").forEach((btn) => {
     if (action === "conditions") {
       if (conditionPicker.classList.contains("visible")) hideConditionPicker();
       else showConditionPicker();
+      return;
+    }
+
+    if (action === "skill") {
+      if (skillPicker.classList.contains("visible")) hideSkillPicker();
+      else showSkillPicker();
+      return;
+    }
+
+    if (action === "bonus") {
+      if (bonusPicker.classList.contains("visible")) hideBonusPicker();
+      else showBonusPicker();
       return;
     }
 

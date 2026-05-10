@@ -85,6 +85,50 @@
     .hotbar-btn.active-action { border-color: #ffd700 !important; box-shadow: 0 0 12px rgba(255,215,0,0.6), inset 0 0 8px rgba(255,215,0,0.15); animation: pulse-gold 1.2s ease infinite; }
     @keyframes pulse-gold { 0%, 100% { box-shadow: 0 0 8px rgba(255,215,0,0.4); } 50% { box-shadow: 0 0 18px rgba(255,215,0,0.8); } }
 
+    /* ═══ ACTION PICKER (Weapons) ═══ */
+    #action-picker { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #2a1010, #1a0a0a); border: 2px solid #e94560; border-radius: 10px; margin-top: 6px; }
+    #action-picker.visible { display: block; }
+    .action-picker-title { color: #e94560; font-size: 11px; font-weight: 700; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+    .action-grid { display: grid; grid-template-columns: 1fr; gap: 4px; }
+    .action-card { padding: 6px 10px; background: #1a0d0d; border: 1px solid #4a1a1a; border-radius: 6px; cursor: pointer; transition: all 0.15s; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .action-card:hover { border-color: #e94560; background: #2a1010; transform: translateX(2px); }
+    .action-card .action-name { font-size: 11px; font-weight: 700; color: #ffd0d0; }
+    .action-card .action-info { font-size: 9px; color: #a07070; margin-top: 2px; }
+    .action-card .action-stats { display: flex; gap: 4px; flex-shrink: 0; }
+    .action-stat { font-size: 9px; padding: 2px 6px; border-radius: 3px; background: #0d0d1a; color: #fff; font-weight: 700; }
+    .action-stat.atk { background: #e94560; }
+    .action-stat.dmg { background: #e9a045; color: #0d0d1a; }
+    .action-stat.range { background: #4488e9; }
+    .action-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #e9456044; border-radius: 4px; background: none; color: #e94560; font-size: 10px; cursor: pointer; }
+    .action-cancel:hover { background: #e9456022; }
+
+    /* ═══ SKILL PICKER ═══ */
+    #skill-picker { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #2a2010, #1a180a); border: 2px solid #e9a045; border-radius: 10px; margin-top: 6px; max-height: 320px; overflow-y: auto; }
+    #skill-picker.visible { display: block; }
+    .skill-picker-title { color: #e9a045; font-size: 11px; font-weight: 700; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 1px; position: sticky; top: 0; background: linear-gradient(180deg, #2a2010, #1a180a); padding: 2px 0; }
+    .skill-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; }
+    .skill-card { padding: 5px 8px; background: #1a1408; border: 1px solid #4a3a18; border-radius: 5px; cursor: pointer; transition: all 0.15s; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+    .skill-card:hover { border-color: #e9a045; background: #2a2010; }
+    .skill-card.proficient { border-left: 3px solid #45e9a0; }
+    .skill-card.expertise { border-left: 3px solid #ffd700; }
+    .skill-card .skill-name { font-size: 10px; font-weight: 600; color: #fff; }
+    .skill-card .skill-ability { font-size: 8px; color: #8899aa; }
+    .skill-card .skill-mod { font-size: 12px; font-weight: 800; color: #e9a045; min-width: 28px; text-align: right; }
+    .skill-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #e9a04544; border-radius: 4px; background: none; color: #e9a045; font-size: 10px; cursor: pointer; position: sticky; bottom: 0; }
+    .skill-cancel:hover { background: #e9a04522; }
+
+    /* ═══ BONUS ACTION PICKER ═══ */
+    #bonus-picker { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a2010, #0d1808); border: 2px solid #45e9a0; border-radius: 10px; margin-top: 6px; }
+    #bonus-picker.visible { display: block; }
+    .bonus-picker-title { color: #45e9a0; font-size: 11px; font-weight: 700; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+    .bonus-grid { display: grid; grid-template-columns: 1fr; gap: 3px; }
+    .bonus-card { padding: 5px 10px; background: #0d1808; border: 1px solid #1a3a18; border-radius: 5px; cursor: pointer; transition: all 0.15s; }
+    .bonus-card:hover { border-color: #45e9a0; background: #1a2010; }
+    .bonus-card .bonus-name { font-size: 11px; font-weight: 700; color: #d0f0d0; }
+    .bonus-card .bonus-desc { font-size: 9px; color: #70a070; margin-top: 1px; }
+    .bonus-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #45e9a044; border-radius: 4px; background: none; color: #45e9a0; font-size: 10px; cursor: pointer; }
+    .bonus-cancel:hover { background: #45e9a022; }
+
     /* ═══ SPELL PICKER ═══ */
     #spell-picker { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1028, #16102e); border: 2px solid #a045e9; border-radius: 10px; margin-top: 6px; }
     #spell-picker.visible { display: block; }
@@ -254,10 +298,31 @@
       <button class="hotbar-btn skill" data-action="skill"><span class="icon">✨</span><span class="label">Skill</span></button>
       <button class="hotbar-btn defend" data-action="defend"><span class="icon">🛡️</span><span class="label">Defend</span></button>
       <button class="hotbar-btn spell" data-action="spell"><span class="icon">🔮</span><span class="label">Spell</span></button>
-      <button class="hotbar-btn item" data-action="item"><span class="icon">🧪</span><span class="label">Item</span></button>
+      <button class="hotbar-btn bonus" data-action="bonus" style="border-bottom: 3px solid #45e9a0;"><span class="icon">⚡</span><span class="label">Bonus</span></button>
       <button class="hotbar-btn conditions-btn" data-action="conditions"><span class="icon">🏷️</span><span class="label">Status</span></button>
       <button class="hotbar-btn rest" data-action="rest"><span class="icon">💤</span><span class="label">Rest</span></button>
       <button class="hotbar-btn refresh" id="refresh-btn"><span class="icon">🔄</span><span class="label">Sync</span></button>
+    </div>
+
+    <!-- Action Picker (Weapons) -->
+    <div id="action-picker">
+      <div class="action-picker-title">⚔️ Choose Attack</div>
+      <div class="action-grid" id="action-grid"></div>
+      <button class="action-cancel" id="action-cancel">Cancel</button>
+    </div>
+
+    <!-- Skill Picker -->
+    <div id="skill-picker">
+      <div class="skill-picker-title">✨ Roll Skill Check</div>
+      <div class="skill-grid" id="skill-grid"></div>
+      <button class="skill-cancel" id="skill-cancel">Cancel</button>
+    </div>
+
+    <!-- Bonus Action Picker -->
+    <div id="bonus-picker">
+      <div class="bonus-picker-title">⚡ Bonus Action</div>
+      <div class="bonus-grid" id="bonus-grid"></div>
+      <button class="bonus-cancel" id="bonus-cancel">Cancel</button>
     </div>
 
     <!-- Spell Picker -->
