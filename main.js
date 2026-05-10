@@ -100,7 +100,15 @@ function logCombat(html, type = "info") {
 function showCombatOverlay(status, detail = "") { combatStatus.textContent = status; combatDetail.textContent = detail; combatOverlay.classList.add("visible"); }
 function hideCombatOverlay() { combatOverlay.classList.remove("visible"); }
 
-combatCancel.addEventListener("click", () => { resetCombat(); OBR.notification.show("Combat cancelled.", "INFO"); });
+combatCancel.addEventListener("click", async () => {
+  // Panic close all modals
+  try { await OBR.modal.close(DICE_MODAL_ID); } catch {}
+  try { await OBR.modal.close(FLOATER_MODAL_ID); } catch {}
+  diceModalOpen = false;
+  floaterModalOpen = false;
+  resetCombat();
+  OBR.notification.show("Combat cancelled.", "INFO");
+});
 
 function resetCombat() {
   combatState = COMBAT.IDLE;
@@ -309,17 +317,31 @@ function hideAoeResults() {
 // FLOATING DAMAGE & SFX
 // ════════════════════════════════════════
 
+let floaterForceCloseTimer = null;
+
 async function ensureFloaterModal() {
+  // Always reset the force-close timer (extends if more damage events come in)
+  if (floaterForceCloseTimer) clearTimeout(floaterForceCloseTimer);
+  floaterForceCloseTimer = setTimeout(async () => {
+    try { await OBR.modal.close(FLOATER_MODAL_ID); } catch {}
+    floaterModalOpen = false;
+    floaterForceCloseTimer = null;
+  }, 4000);
+
   if (floaterModalOpen) return;
-  await OBR.modal.open({
-    id: FLOATER_MODAL_ID,
-    url: "/floater.html",
-    fullScreen: true,
-    hidePaper: true,
-    hideBackdrop: true,
-  });
-  floaterModalOpen = true;
-  await new Promise((r) => setTimeout(r, 500));
+  try {
+    await OBR.modal.open({
+      id: FLOATER_MODAL_ID,
+      url: "/floater.html",
+      fullScreen: true,
+      hidePaper: true,
+      hideBackdrop: true,
+    });
+    floaterModalOpen = true;
+    await new Promise((r) => setTimeout(r, 400));
+  } catch {
+    floaterModalOpen = false;
+  }
 }
 
 async function showFloatingDamage(tokenId, damage, damageType, options = {}) {
@@ -1164,23 +1186,32 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
 
 function try3DDice(notation, label, modifier, rollId) {
   // Fire-and-forget: open dice modal for visual flair only
-  // If it works, great. If not, combat already proceeded.
-  try {
-    if (!diceModalOpen) {
-      OBR.modal.open({ id: DICE_MODAL_ID, url: "/dice.html", fullScreen: true, hidePaper: true, hideBackdrop: true })
-        .then(() => {
-          diceModalOpen = true;
-          setTimeout(() => {
-            OBR.broadcast.sendMessage(DICE_CHANNEL, {
-              notation, label, modifier,
-              charName: attackerData?.name || currentCharData?.name || "",
-              rollId,
-            }).catch(() => {});
-          }, 1000);
-        })
-        .catch(() => {});
-    }
-  } catch {}
+  // Hard auto-close after 5s regardless of dice result, to prevent
+  // invisible modal overlay from blocking map clicks.
+  if (diceModalOpen) return;
+
+  diceModalOpen = true;
+
+  // Force-close after 5 seconds NO MATTER WHAT
+  const forceClose = setTimeout(async () => {
+    try { await OBR.modal.close(DICE_MODAL_ID); } catch {}
+    diceModalOpen = false;
+  }, 5000);
+
+  OBR.modal.open({ id: DICE_MODAL_ID, url: "/dice.html", fullScreen: true, hidePaper: true, hideBackdrop: true })
+    .then(() => {
+      setTimeout(() => {
+        OBR.broadcast.sendMessage(DICE_CHANNEL, {
+          notation, label, modifier,
+          charName: attackerData?.name || currentCharData?.name || "",
+          rollId,
+        }).catch(() => {});
+      }, 800);
+    })
+    .catch(() => {
+      clearTimeout(forceClose);
+      diceModalOpen = false;
+    });
 }
 
 function getAttackMod(char) {
