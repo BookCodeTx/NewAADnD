@@ -102,6 +102,7 @@ let pendingRollId = null;
 let attackRollResult = null;
 let selectedSpell = null;
 let selectedWeapon = null;
+let pendingAoeResults = null;
 let floaterModalOpen = false;
 
 const FLOATER_CHANNEL = "com.dnd-hotbar/floater";
@@ -148,12 +149,13 @@ function resetCombat() {
   attackRollResult = null;
   selectedSpell = null;
   selectedWeapon = null;
-  // diceModalOpen removed (3D dice now embedded in popover)
+  pendingAoeResults = null;
   floaterModalOpen = false;
   hideCombatOverlay();
   hideSpellPicker();
   hideActionPicker();
   hideBonusPicker();
+  hideDamageInput();
   hideAoeResults();
   document.querySelectorAll(".hotbar-btn").forEach((b) => b.classList.remove("active-action"));
 }
@@ -220,116 +222,85 @@ function onSpellSelected(key, spell) {
 }
 
 // ════════════════════════════════════════
-// ACTION PICKER (Weapons)
+// ATTACK (simplified — manual damage input)
 // ════════════════════════════════════════
 
-function calcWeaponAttackMod(char, weapon) {
-  // Use pre-calculated attackBonus from parser if available
-  if (weapon.attackBonus != null) return weapon.attackBonus;
-  const isFinesse = weapon.properties?.includes("Finesse");
-  const isRanged = weapon.attackType === "ranged" || weapon.type?.includes("Ranged");
+function getAttackModifier(char) {
+  const weapon = char.weapons?.find((w) => w.equipped) || char.weapons?.[0];
+  if (weapon?.attackBonus != null) return weapon.attackBonus;
   const str = char.stats.find((s) => s.name === "STR")?.modifier || 0;
   const dex = char.stats.find((s) => s.name === "DEX")?.modifier || 0;
+  const isRanged = weapon?.attackType === "ranged";
+  const isFinesse = weapon?.properties?.includes("Finesse");
   const ability = isRanged ? dex : isFinesse ? Math.max(str, dex) : str;
   return ability + char.proficiencyBonus;
 }
 
-function getWeaponDamageMod(char, weapon) {
-  if (weapon.damageMod != null) return weapon.damageMod;
-  const isFinesse = weapon.properties?.includes("Finesse");
-  const isRanged = weapon.attackType === "ranged" || weapon.type?.includes("Ranged");
-  const str = char.stats.find((s) => s.name === "STR")?.modifier || 0;
-  const dex = char.stats.find((s) => s.name === "DEX")?.modifier || 0;
-  return isRanged ? dex : isFinesse ? Math.max(str, dex) : str;
-}
-
-function buildActionGrid() {
-  actionGrid.innerHTML = "";
-  const weapons = currentCharData?.weapons || [];
-
-  if (weapons.length === 0) {
-    const str = currentCharData.stats.find((s) => s.name === "STR")?.modifier || 0;
-    const card = document.createElement("div");
-    card.className = "action-card";
-    card.innerHTML = `
-      <div>
-        <div class="action-name">👊 Unarmed Strike</div>
-        <div class="action-info">Melee · 5ft</div>
-      </div>
-      <div class="action-stats">
-        <span class="action-stat atk">+${str + currentCharData.proficiencyBonus}</span>
-        <span class="action-stat dmg">1+${str}</span>
-      </div>`;
-    card.addEventListener("click", () => onWeaponSelected({
-      name: "Unarmed Strike", damage: "1", damageType: "Bludgeoning",
-      type: "Simple Melee", attackType: "melee", properties: [], mastery: [],
-      attackBonus: str + currentCharData.proficiencyBonus, damageMod: str,
-      range: 5, longRange: 5,
-    }));
-    actionGrid.appendChild(card);
-    return;
-  }
-
-  for (const w of weapons) {
-    const atkMod = calcWeaponAttackMod(currentCharData, w);
-    const dmgMod = getWeaponDamageMod(currentCharData, w);
-    const isRanged = w.attackType === "ranged" || w.type?.includes("Ranged");
-    const rangeStr = isRanged ? `${w.range}/${w.longRange}` : `${w.range}ft`;
-    const typeIcon = isRanged ? "🏹" : "⚔️";
-    const typeLabel = isRanged ? "Ranged" : "Melee";
-
-    // Build property tags
-    const props = w.properties || [];
-    const mastery = w.mastery || [];
-    let tagsHtml = "";
-    for (const p of props) {
-      tagsHtml += `<span class="wpn-tag">${p}</span>`;
-    }
-    for (const m of mastery) {
-      tagsHtml += `<span class="wpn-tag mastery">${m}</span>`;
-    }
-
-    // Damage display: "1d6+3 Slashing"
-    const dmgSign = dmgMod >= 0 ? "+" : "";
-    const dmgStr = dmgMod !== 0 ? `${w.damage}${dmgSign}${dmgMod}` : w.damage;
-
-    const card = document.createElement("div");
-    card.className = "action-card" + (w.equipped ? " equipped" : "");
-    card.innerHTML = `
-      <div style="flex:1; min-width:0">
-        <div class="action-name">${typeIcon} ${w.name}${w.equipped ? " <span class='equip-badge'>E</span>" : ""}</div>
-        <div class="action-info">${typeLabel} · ${rangeStr}${tagsHtml ? " · " + tagsHtml : ""}</div>
-      </div>
-      <div class="action-stats">
-        <span class="action-stat atk">${atkMod >= 0 ? "+" : ""}${atkMod}</span>
-        <span class="action-stat dmg">${dmgStr} <small>${w.damageType || ""}</small></span>
-      </div>`;
-    card.addEventListener("click", () => onWeaponSelected(w));
-    actionGrid.appendChild(card);
-  }
-}
-
-function showActionPicker() {
-  buildActionGrid();
-  actionPicker.classList.add("visible");
-  hideOtherPickers("action");
-}
-
 function hideActionPicker() { actionPicker.classList.remove("visible"); }
 
-function onWeaponSelected(weapon) {
-  selectedWeapon = weapon;
-  hideActionPicker();
-  combatState = COMBAT.TARGETING;
-  combatAction = "attack";
-  attackerData = { ...currentCharData };
-  attackerTokenId = currentTokenId;
-  document.querySelector(".hotbar-btn.attack")?.classList.add("active-action");
-  showCombatOverlay(`${attackerData.name}: ${weapon.name}`, "Click on enemy token to attack...");
-  logCombat(`<strong>${attackerData.name}</strong> readies <strong>${weapon.name}</strong>`);
+const damageInputPanel = document.getElementById("damage-input-panel");
+const damageInput = document.getElementById("damage-input");
+const damageInputTitle = document.getElementById("damage-input-title");
+
+function showDamageInput(title) {
+  damageInputTitle.textContent = title || "Enter Damage";
+  damageInput.value = "";
+  damageInputPanel.classList.add("visible");
+  damageInput.focus();
 }
 
-actionCancel.addEventListener("click", () => { hideActionPicker(); resetCombat(); });
+function hideDamageInput() { damageInputPanel.classList.remove("visible"); }
+
+document.getElementById("damage-apply-btn").addEventListener("click", () => applyManualDamage());
+damageInput.addEventListener("keydown", (e) => { if (e.key === "Enter") applyManualDamage(); });
+document.getElementById("damage-cancel").addEventListener("click", () => { hideDamageInput(); resetCombat(); });
+
+async function applyManualDamage() {
+  const damage = parseInt(damageInput.value) || 0;
+  if (damage <= 0) { damageInput.focus(); return; }
+  hideDamageInput();
+
+  if (pendingAoeResults) {
+    await resolveAoeDamage(damage);
+  } else {
+    await resolveDamage({ finalTotal: damage });
+  }
+}
+
+async function resolveAoeDamage(fullDamage) {
+  const results = pendingAoeResults;
+  if (!results) { resetCombat(); return; }
+  const halfDamage = Math.floor(fullDamage / 2);
+
+  const tokenIdsToUpdate = results.filter((r) => r.char).map((r) => r.token.id);
+  await OBR.scene.items.updateItems(tokenIdsToUpdate, (items) => {
+    for (const item of items) {
+      const r = results.find((r) => r.token.id === item.id);
+      if (!r || !r.char) continue;
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta?.character) continue;
+      const dmg = r.saved ? halfDamage : fullDamage;
+      let remaining = dmg;
+      let temp = meta.character.hp.temp || 0;
+      if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
+      meta.character.hp.current = Math.max(0, meta.character.hp.current - remaining);
+      meta.character.hp.temp = temp;
+      meta.lastUpdated = Date.now();
+      logCombat(`<strong class="damage">${dmg}</strong> → <strong>${r.name}</strong>${r.saved ? " (half)" : ""}`, "damage");
+    }
+  });
+
+  await syncInitiativeHP();
+  await broadcastSfx("damage");
+  for (const r of results) {
+    const dmg = r.saved ? halfDamage : fullDamage;
+    if (dmg > 0) await showFloatingDamage(r.token.id, dmg, "Force", { isSpell: true });
+  }
+
+  showCombatOverlay("Damage Applied!", `${fullDamage} to failed, ${halfDamage} to saved`);
+  await OBR.notification.show(`AoE: ${fullDamage} damage applied`, "SUCCESS");
+  setTimeout(() => resetCombat(), 3000);
+}
 
 // ════════════════════════════════════════
 // SKILL PICKER
@@ -406,8 +377,7 @@ async function onBonusSelected(action) {
   hideBonusPicker();
   logCombat(`⚡ <strong>${currentCharData.name}</strong> uses bonus action: <strong>${action.name}</strong>`, "info");
 
-  if (action.type === "attack" && action.weapon) {
-    selectedWeapon = action.weapon;
+  if (action.type === "attack") {
     combatState = COMBAT.TARGETING;
     combatAction = "attack";
     attackerData = { ...currentCharData };
@@ -457,12 +427,9 @@ async function castAoeSpell(centerToken) {
     return;
   }
 
-  const totalDamage = parseDamageNotation(spell.damage);
-  const halfDamage = Math.floor(totalDamage / 2);
+  logCombat(`<strong>${spell.name}</strong> — DC ${dc} ${spell.save} Save`, "spell");
 
-  logCombat(`<strong>${spell.name}</strong> deals <strong>${totalDamage}</strong> ${spell.damageType} damage (DC ${dc} ${spell.save})`, "spell");
-
-  const results = [];
+  const saveResults = [];
 
   for (const token of inRadius) {
     const meta = token.metadata?.[METADATA_KEY];
@@ -471,85 +438,44 @@ async function castAoeSpell(centerToken) {
     const conditions = token.metadata?.[COND_METADATA_KEY] || [];
 
     if (shouldAutoFailSave(conditions, spell.save)) {
-      results.push({ token, char, name, saved: false, roll: 0, total: 0, autoFail: true, damage: totalDamage });
-      logCombat(`<strong>${name}</strong>: <strong class="miss">AUTO-FAIL</strong> (condition) — <strong class="damage">${totalDamage} ${spell.damageType}</strong>`, "spell");
+      saveResults.push({ token, char, name, saved: false, roll: 0, total: 0, autoFail: true });
+      logCombat(`<strong>${name}</strong>: <strong class="miss">AUTO-FAIL</strong> (condition)`, "spell");
       continue;
     }
 
     const saveMod = getSaveMod(char, spell.save);
     const { roll, total } = rollSave(saveMod);
     const saved = total >= dc;
-    const dmg = saved ? halfDamage : totalDamage;
-
-    results.push({ token, char, name, saved, roll, total, damage: dmg });
+    saveResults.push({ token, char, name, saved, roll, total });
 
     const saveStr = saved
       ? `<strong class="hit">SAVE</strong> (${roll}+${saveMod}=${total})`
       : `<strong class="miss">FAIL</strong> (${roll}+${saveMod}=${total})`;
-    const dmgStr = saved
-      ? `<strong class="damage">${dmg}</strong> (half)`
-      : `<strong class="damage">${dmg}</strong> (full)`;
-    logCombat(`<strong>${name}</strong>: ${spell.save} ${saveStr} — ${dmgStr} ${spell.damageType}`, "spell");
+    logCombat(`<strong>${name}</strong>: ${spell.save} ${saveStr}`, "spell");
   }
 
-  // Apply damage to all targets
-  const tokenIdsToUpdate = results.map((r) => r.token.id);
-  await OBR.scene.items.updateItems(tokenIdsToUpdate, (items) => {
-    for (const item of items) {
-      const r = results.find((r) => r.token.id === item.id);
-      if (!r || !r.char) continue;
-      const meta = item.metadata[METADATA_KEY];
-      if (!meta?.character) continue;
-
-      let remaining = r.damage;
-      let temp = meta.character.hp.temp || 0;
-      if (temp > 0) {
-        const absorbed = Math.min(temp, remaining);
-        temp -= absorbed;
-        remaining -= absorbed;
-      }
-      meta.character.hp.current = Math.max(0, meta.character.hp.current - remaining);
-      meta.character.hp.temp = temp;
-      meta.lastUpdated = Date.now();
-    }
-  });
-
-  await syncInitiativeHP();
-  showAoeResults(spell, dc, results);
-
-  // SFX + visual effects + floating damage for all targets
   await broadcastSfx("spell");
   playSpellEffect(spell.damageType);
-  setTimeout(async () => {
-    await broadcastSfx("damage");
-    for (const r of results) {
-      await showFloatingDamage(r.token.id, r.damage, spell.damageType, { isSpell: true });
-      await new Promise((w) => setTimeout(w, 150));
-    }
-  }, 300);
 
-  const hitCount = results.filter((r) => !r.saved).length;
-  const saveCount = results.filter((r) => r.saved).length;
-  await OBR.notification.show(
-    `${spell.name}: ${totalDamage} ${spell.damageType} — ${hitCount} failed, ${saveCount} saved`,
-    "SUCCESS"
-  );
+  const failCount = saveResults.filter((r) => !r.saved).length;
+  const saveCount = saveResults.filter((r) => r.saved).length;
+  showAoeResults(spell, dc, saveResults);
+  showCombatOverlay(`${spell.name}`, `${failCount} failed, ${saveCount} saved — enter damage`);
 
-  showCombatOverlay(`${spell.name} Complete!`, `${results.length} targets hit`);
-  setTimeout(() => resetCombat(), 4500);
+  pendingAoeResults = saveResults;
+  combatState = COMBAT.ROLLING_DAMAGE;
+  showDamageInput(`${spell.name} — Enter full damage`);
 }
 
 function showAoeResults(spell, dc, results) {
   aoeTitle.textContent = `${spell.name} — DC ${dc} ${spell.save} Save`;
   aoeTargetList.innerHTML = results.map((r) => {
     const saveClass = r.saved ? "saved" : "failed";
-    const dmgClass = r.saved ? "half" : "full";
-    const saveText = r.autoFail ? "AUTO-FAIL" : `${r.roll}+${getSaveMod(r.char, spell.save)}=${r.total} ${r.saved ? "✓" : "✗"}`;
+    const saveText = r.autoFail ? "AUTO-FAIL" : `${r.roll}+${getSaveMod(r.char, spell.save)}=${r.total} ${r.saved ? "SAVE" : "FAIL"}`;
     return `
       <div class="aoe-target ${saveClass}">
         <span class="aoe-name">${r.name}</span>
         <span class="aoe-save-result">${saveText}</span>
-        <span class="aoe-dmg ${dmgClass}">${r.damage} ${spell.damageType}</span>
       </div>
     `;
   }).join("");
@@ -1277,14 +1203,14 @@ function enterTargeting(action) {
   if (!currentCharData || !currentTokenId) return;
 
   if (action === "spell") { showSpellPicker(); return; }
-  if (action === "attack") { showActionPicker(); return; }
 
   combatState = COMBAT.TARGETING;
   combatAction = action;
   attackerData = { ...currentCharData };
   attackerTokenId = currentTokenId;
   document.querySelector(`.hotbar-btn.${action}`)?.classList.add("active-action");
-  showCombatOverlay(`${attackerData.name}: Attack`, "Click on an enemy token to select target...");
+  showCombatOverlay(`${attackerData.name}: Attack`, "Click on an enemy token...");
+  logCombat(`<strong>${attackerData.name}</strong> readies an attack`);
 }
 
 async function pickTarget(targetToken) {
@@ -1304,10 +1230,8 @@ async function pickTarget(targetToken) {
   logCombat(`<strong>${attackerData.name}</strong> targets <strong>${targetName}</strong> (AC ${targetAC})`);
 
   combatState = COMBAT.ROLLING_ATTACK;
-  const weapon = selectedWeapon || attackerData.weapons?.find((w) => w.equipped) || attackerData.weapons?.[0];
   let modifier, label;
 
-  // Apply condition penalties to attack rolls
   const attackerConds = await getTokenConditions(attackerTokenId);
   const { penalty, bonus } = getConditionPenalty(attackerConds);
 
@@ -1318,9 +1242,8 @@ async function pickTarget(targetToken) {
     modifier = Math.max(intMod, wisMod, chaMod) + attackerData.proficiencyBonus;
     label = `${attackerData.name} Spell Attack → ${targetName}`;
   } else {
-    modifier = weapon ? calcWeaponAttackMod(attackerData, weapon) : getAttackMod(attackerData);
-    const weaponName = weapon?.name || "Unarmed";
-    label = `${attackerData.name} → ${targetName} (${weaponName})`;
+    modifier = getAttackModifier(attackerData);
+    label = `${attackerData.name} Attack → ${targetName}`;
   }
 
   modifier += penalty + bonus;
@@ -1358,50 +1281,24 @@ async function castSingleTargetSaveSpell(targetToken) {
     roll = result.roll; total = result.total;
     saved = total >= dc;
     const saveStr = saved ? `<strong class="hit">SAVE</strong>` : `<strong class="miss">FAIL</strong>`;
-    logCombat(`<strong>${name}</strong>: ${spell.save} Save ${roll}+${getSaveMod(char, spell.save)}=${total} ${saveStr}`, "spell");
+    logCombat(`<strong>${name}</strong>: ${spell.save} Save ${roll}+${saveMod}=${total} ${saveStr}`, "spell");
   }
 
-  const totalDamage = parseDamageNotation(spell.damage);
-  const dmg = saved ? Math.floor(totalDamage / 2) : totalDamage;
-
-  if (dmg > 0 && char) {
-    await OBR.scene.items.updateItems([targetToken.id], (items) => {
-      for (const item of items) {
-        const m = item.metadata[METADATA_KEY];
-        if (!m?.character) return;
-        let remaining = dmg;
-        let temp = m.character.hp.temp || 0;
-        if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
-        m.character.hp.current = Math.max(0, m.character.hp.current - remaining);
-        m.character.hp.temp = temp;
-        m.lastUpdated = Date.now();
-      }
-    });
-    await syncInitiativeHP();
-  }
-
-  const dmgLabel = saved ? `${dmg} (half)` : `${dmg} (full)`;
-  logCombat(`<strong class="damage">${dmgLabel} ${spell.damageType}</strong> to <strong>${name}</strong>`, "spell");
-
-  // SFX + visual effects + floating damage
   await broadcastSfx("spell");
   playSpellEffect(spell.damageType);
-  if (dmg > 0) {
-    setTimeout(async () => {
-      await broadcastSfx("damage");
-      await showFloatingDamage(targetToken.id, dmg, spell.damageType, { isSpell: true });
-    }, 300);
-  }
 
-  await OBR.notification.show(`${spell.name}: ${name} ${saved ? "saves" : "fails"} — ${dmg} ${spell.damageType}`, saved ? "WARNING" : "SUCCESS");
+  const saveLabel = saved ? "SAVED" : "FAILED";
+  showCombatOverlay(`${spell.name}: ${saveLabel}!`, `Enter damage below`);
+  await OBR.notification.show(`${spell.name}: ${name} ${saveLabel}`, saved ? "WARNING" : "SUCCESS");
 
-  showCombatOverlay(`${spell.name}: ${saved ? "Saved!" : "Failed!"}`, `${dmg} ${spell.damageType} damage to ${name}`);
-  setTimeout(() => resetCombat(), 3500);
+  targetTokenId = targetToken.id;
+  targetData = char || null;
+  combatState = COMBAT.ROLLING_DAMAGE;
+  showDamageInput(`${spell.name} → ${name} (${saveLabel})`);
 }
 
 async function handleDiceResult(result) {
   if (combatState === COMBAT.ROLLING_ATTACK) { attackRollResult = result; await resolveAttackRoll(result); }
-  else if (combatState === COMBAT.ROLLING_DAMAGE) { await resolveDamage(result); }
 }
 
 async function resolveAttackRoll(result) {
@@ -1414,7 +1311,7 @@ async function resolveAttackRoll(result) {
 
   if (isCrit) {
     logCombat(`Attack Roll: <strong class="crit">${finalTotal}</strong> vs AC ${targetAC} — <strong class="crit">CRITICAL HIT!</strong>`, "crit");
-    showCombatOverlay(`CRITICAL HIT!`, `Rolling damage (double dice)...`);
+    showCombatOverlay(`CRITICAL HIT!`, `Enter damage below`);
   } else if (isNat1) {
     logCombat(`Attack Roll: <strong class="miss">${finalTotal}</strong> — <strong class="miss">CRITICAL MISS!</strong>`, "miss");
     showCombatOverlay(`CRITICAL MISS!`, `${attackerData.name} whiffs completely.`);
@@ -1425,7 +1322,7 @@ async function resolveAttackRoll(result) {
     return;
   } else if (isHit) {
     logCombat(`Attack Roll: <strong class="hit">${finalTotal}</strong> vs AC ${targetAC} — <strong class="hit">HIT!</strong>`, "hit");
-    showCombatOverlay(`HIT! (${finalTotal} vs AC ${targetAC})`, `Rolling damage...`);
+    showCombatOverlay(`HIT! (${finalTotal} vs AC ${targetAC})`, `Enter damage below`);
   } else {
     logCombat(`Attack Roll: <strong class="miss">${finalTotal}</strong> vs AC ${targetAC} — <strong class="miss">MISS</strong>`, "miss");
     showCombatOverlay(`MISS! (${finalTotal} vs AC ${targetAC})`, `${attackerData.name}'s attack fails to connect.`);
@@ -1437,28 +1334,8 @@ async function resolveAttackRoll(result) {
   }
 
   combatState = COMBAT.ROLLING_DAMAGE;
-  pendingRollId = crypto.randomUUID();
-
-  let damageNotation, damageMod, damageLabel;
-  if (combatAction === "spell") {
-    damageNotation = isCrit ? "2d10" : "1d10";
-    damageMod = 0;
-    damageLabel = `${attackerData.name} Spell Damage`;
-  } else {
-    const weapon = selectedWeapon || attackerData.weapons?.find((w) => w.equipped) || attackerData.weapons?.[0];
-    const baseDamage = weapon?.damage || "1d4";
-    if (isCrit) {
-      const match = baseDamage.match(/^(\d+)d(\d+)$/);
-      damageNotation = match ? `${parseInt(match[1]) * 2}d${match[2]}` : baseDamage;
-    } else {
-      damageNotation = baseDamage;
-    }
-    damageMod = getWeaponDamageMod(attackerData, weapon || {});
-    damageLabel = `${attackerData.name} Damage (${weapon?.name || "Unarmed"})`;
-  }
-
-  await new Promise((r) => setTimeout(r, 1500));
-  await rollDice(damageNotation, damageLabel, damageMod, pendingRollId);
+  const hitLabel = isCrit ? `CRIT! Enter damage → ${targetName}` : `HIT! Enter damage → ${targetName}`;
+  showDamageInput(hitLabel);
 }
 
 async function resolveDamage(result) {
@@ -1515,19 +1392,13 @@ async function resolveDamage(result) {
     isDown ? `${targetName} falls to 0 HP!` : `${targetName}: ${newCurrent}/${targetData.hp.max} HP remaining`
   );
 
-  // SFX + visual effects + floating damage
   const isCrit = attackRollResult?.natValue === 20;
-  const weapon = selectedWeapon || attackerData.weapons?.find((w) => w.equipped) || attackerData.weapons?.[0];
-  const dmgType = combatAction === "spell" ? "Force" : (weapon?.damageType || "Slashing");
   await broadcastSfx(isCrit ? "crit" : "attack-hit");
-  if (isCrit) {
-    playCritEffect(dmgType);
-  } else {
-    playHitEffect(dmgType);
-  }
+  if (isCrit) playCritEffect("Slashing");
+  else playHitEffect("Slashing");
   setTimeout(async () => {
     await broadcastSfx("damage");
-    await showFloatingDamage(targetTokenId, damage, dmgType, { isCrit });
+    await showFloatingDamage(targetTokenId, damage, "Slashing", { isCrit });
   }, 400);
 
   setTimeout(() => resetCombat(), 3200);
@@ -1747,7 +1618,7 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
 
   // Process combat result
   if (pendingRollId === rid) {
-    if (combatState === COMBAT.ROLLING_ATTACK || combatState === COMBAT.ROLLING_DAMAGE) {
+    if (combatState === COMBAT.ROLLING_ATTACK) {
       handleDiceResult(result);
     }
   }
@@ -1762,17 +1633,6 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
   }
 }
 
-function getAttackMod(char) {
-  if (!char) return 0;
-  const weapon = char.weapons?.find((w) => w.equipped) || char.weapons?.[0];
-  if (!weapon) return 0;
-  const isFinesse = weapon.properties?.includes("Finesse");
-  const isRanged = weapon.type?.includes("Ranged");
-  const str = char.stats.find((s) => s.name === "STR")?.modifier || 0;
-  const dex = char.stats.find((s) => s.name === "DEX")?.modifier || 0;
-  const abilityMod = isRanged ? dex : isFinesse ? Math.max(str, dex) : str;
-  return abilityMod + char.proficiencyBonus;
-}
 
 // ════════════════════════════════════════
 // HOTBAR DISPLAY
