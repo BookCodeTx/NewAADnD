@@ -3,6 +3,7 @@ import { SPELLS, getSpellcastingDC, getSaveMod, tokensInRadius, rollSave, parseD
 import { CONDITIONS, getConditionPenalty, shouldAutoFailSave } from "./conditions.js";
 import { playSfx } from "./sfx.js";
 import { playHitEffect, playCritEffect, playMissEffect, playHealEffect, playSpellEffect, screenShake, getDiceColor } from "./effects.js";
+import { parseCharacter } from "./server/parser.js";
 
 const METADATA_KEY = "com.dnd-hotbar/character";
 const INIT_METADATA_KEY = "com.dnd-hotbar/initiative";
@@ -1733,6 +1734,118 @@ document.querySelectorAll(".hotbar-btn").forEach((btn) => {
 });
 
 // ════════════════════════════════════════
+// CHARACTER FETCHER (multi-strategy with fallbacks)
+// ════════════════════════════════════════
+// วิธีดึงข้อมูลตัวละครจาก D&D Beyond (ลองทีละวิธี):
+//   1. เรียก Proxy API ของเรา (Vercel/Express) — ดึง+parse ฝั่ง server
+//   2. ดึงตรงจาก D&D Beyond ผ่าน CORS proxy — parse ฝั่ง client
+//   3. ลอง CORS proxy ตัวสำรอง
+
+const DNDB_API = (id) => `https://character-service.dndbeyond.com/character/v5/character/${id}`;
+const CORS_PROXIES = [
+  (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+  (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+];
+
+async function fetchCharacter(charId) {
+  // Strategy 1: Our own API proxy (Vercel serverless / Express)
+  if (PROXY_URL) {
+    try {
+      console.log("[fetch] Trying own proxy...");
+      const res = await fetch(`${PROXY_URL}/api/character/${charId}`);
+      const data = await res.json();
+      if (res.ok && data.character) {
+        console.log("[fetch] Own proxy succeeded");
+        return { success: true, character: data.character };
+      }
+      // If 403, fall through to CORS proxy
+      if (res.status !== 403) {
+        return { success: false, error: data.error || `Server error ${res.status}`, hint: data.hint };
+      }
+      console.warn("[fetch] Own proxy returned 403, trying CORS proxies...");
+    } catch (err) {
+      console.warn("[fetch] Own proxy failed:", err.message);
+    }
+  }
+
+  // Strategy 2 & 3: Direct fetch via CORS proxies (parse client-side)
+  const dndbUrl = DNDB_API(charId);
+
+  for (let i = 0; i < CORS_PROXIES.length; i++) {
+    const proxyUrl = CORS_PROXIES[i](dndbUrl);
+    try {
+      console.log(`[fetch] Trying CORS proxy ${i + 1}...`);
+      const res = await fetch(proxyUrl, {
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) {
+        console.warn(`[fetch] CORS proxy ${i + 1} returned ${res.status}`);
+        if (res.status === 403 || res.status === 404) {
+          return {
+            success: false,
+            error: res.status === 403
+              ? "ดึงข้อมูลไม่ได้ — ตัวละครนี้ไม่ได้เปิด Public"
+              : "ไม่พบตัวละคร",
+            hint: res.status === 403
+              ? 'ไปที่ D&D Beyond → Character Settings → เปิด "Public"'
+              : "ตรวจสอบ Character ID หรือ URL อีกครั้ง",
+          };
+        }
+        continue;
+      }
+      const raw = await res.json();
+      // Parse client-side using the same parser as server
+      const character = parseCharacter(raw);
+      console.log(`[fetch] CORS proxy ${i + 1} succeeded:`, character.name);
+      return { success: true, character };
+    } catch (err) {
+      console.warn(`[fetch] CORS proxy ${i + 1} failed:`, err.message);
+    }
+  }
+
+  // Strategy 4: Try our API without PROXY_URL prefix (same-origin Vercel deployment)
+  if (!PROXY_URL) {
+    try {
+      console.log("[fetch] Trying same-origin API...");
+      const res = await fetch(`/api/character/${charId}`);
+      const data = await res.json();
+      if (res.ok && data.character) {
+        console.log("[fetch] Same-origin API succeeded");
+        return { success: true, character: data.character };
+      }
+      if (res.status !== 403) {
+        return { success: false, error: data.error || `Error ${res.status}`, hint: data.hint };
+      }
+    } catch (err) {
+      console.warn("[fetch] Same-origin API failed:", err.message);
+    }
+
+    // Same-origin also 403? Try CORS proxies
+    for (let i = 0; i < CORS_PROXIES.length; i++) {
+      const proxyUrl = CORS_PROXIES[i](dndbUrl);
+      try {
+        console.log(`[fetch] (same-origin fallback) CORS proxy ${i + 1}...`);
+        const res = await fetch(proxyUrl, { headers: { Accept: "application/json" } });
+        if (!res.ok) continue;
+        const raw = await res.json();
+        const character = parseCharacter(raw);
+        console.log(`[fetch] CORS proxy ${i + 1} succeeded:`, character.name);
+        return { success: true, character };
+      } catch (err) {
+        console.warn(`[fetch] CORS proxy ${i + 1} failed:`, err.message);
+      }
+    }
+  }
+
+  return {
+    success: false,
+    error: "ดึงข้อมูลตัวละครไม่สำเร็จ",
+    hint: "ลองอีกครั้ง หรือตรวจสอบว่าตัวละครเป็น Public บน D&D Beyond",
+  };
+}
+
+// ════════════════════════════════════════
 // LINK / UNLINK / REFRESH
 // ════════════════════════════════════════
 
@@ -1748,16 +1861,15 @@ linkBtn.addEventListener("click", async () => {
   hideError();
 
   try {
-    const res = await fetch(`${PROXY_URL}/api/character/${charId}`);
-    const data = await res.json();
-    if (!res.ok) {
-      linkStatus.textContent = data.error || "Fetch failed.";
+    const result = await fetchCharacter(charId);
+    if (!result.success) {
+      linkStatus.textContent = result.error;
       linkStatus.classList.add("error");
-      showError(data.error, data.hint);
-      await OBR.notification.show(data.error, "ERROR");
+      showError(result.error, result.hint);
+      await OBR.notification.show(result.error, "ERROR");
       return;
     }
-    const char = data.character;
+    const char = result.character;
     await OBR.scene.items.updateItems([currentTokenId], (items) => {
       for (const item of items) {
         item.metadata[METADATA_KEY] = { characterId: charId, character: char, lastUpdated: Date.now() };
@@ -1767,11 +1879,11 @@ linkBtn.addEventListener("click", async () => {
     showHotbar(char);
     linkPanel.classList.add("hidden");
     await OBR.notification.show(`เชื่อมต่อ "${char.name}" สำเร็จ!`, "SUCCESS");
-  } catch {
-    const msg = "เชื่อมต่อ Proxy Server ไม่ได้";
+  } catch (err) {
+    const msg = "เกิดข้อผิดพลาดในการดึงข้อมูล";
     linkStatus.textContent = msg;
     linkStatus.classList.add("error");
-    showError(msg, "ตรวจสอบว่า Proxy Server กำลังทำงานอยู่ (cd server && npm run dev)");
+    showError(msg, err.message);
   } finally {
     linkBtn.disabled = false;
   }
@@ -1795,21 +1907,19 @@ document.getElementById("refresh-btn").addEventListener("click", async () => {
   if (!meta?.characterId) return;
   hideError();
   try {
-    const res = await fetch(`${PROXY_URL}/api/character/${meta.characterId}`);
-    const data = await res.json();
-    if (!res.ok) { showError(data.error, data.hint); await OBR.notification.show(data.error, "ERROR"); return; }
+    const result = await fetchCharacter(meta.characterId);
+    if (!result.success) { showError(result.error, result.hint); await OBR.notification.show(result.error, "ERROR"); return; }
     await OBR.scene.items.updateItems([currentTokenId], (items) => {
       for (const item of items) {
-        item.metadata[METADATA_KEY] = { characterId: meta.characterId, character: data.character, lastUpdated: Date.now() };
+        item.metadata[METADATA_KEY] = { characterId: meta.characterId, character: result.character, lastUpdated: Date.now() };
       }
     });
-    currentCharData = data.character;
-    showHotbar(data.character);
+    currentCharData = result.character;
+    showHotbar(result.character);
     await OBR.notification.show("อัปเดตข้อมูลตัวละครสำเร็จ!", "SUCCESS");
-  } catch {
-    const msg = "เชื่อมต่อ Proxy Server ไม่ได้";
-    showError(msg, "ตรวจสอบว่า Proxy Server กำลังทำงานอยู่ (cd server && npm run dev)");
-    await OBR.notification.show(msg, "ERROR");
+  } catch (err) {
+    showError("เกิดข้อผิดพลาด", err.message);
+    await OBR.notification.show("อัปเดตข้อมูลล้มเหลว", "ERROR");
   }
 });
 
