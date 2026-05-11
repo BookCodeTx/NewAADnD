@@ -2,12 +2,9 @@ const ABILITY_NAMES = [
   "STR", "DEX", "CON", "INT", "WIS", "CHA"
 ];
 
-const WEAPON_TYPES = [
-  "Martial Melee",
-  "Martial Ranged",
-  "Simple Melee",
-  "Simple Ranged",
-];
+// categoryId: 1=Simple, 2=Martial; attackType: 1=Melee, 2=Ranged
+const CATEGORY_NAMES = { 1: "Simple", 2: "Martial" };
+const ATTACK_TYPE_NAMES = { 1: "Melee", 2: "Ranged" };
 
 export function parseCharacter(raw) {
   // Support both v5 (raw.data) and SCDS v1 (raw.data or raw directly)
@@ -162,22 +159,56 @@ function parseBonusActions(d, classes, weapons) {
   return actions;
 }
 
+// Map subType strings like "dexterity-score" → stat ID 2
+const SUBTYPE_TO_STAT_ID = {
+  "strength-score": 1,
+  "dexterity-score": 2,
+  "constitution-score": 3,
+  "intelligence-score": 4,
+  "wisdom-score": 5,
+  "charisma-score": 6,
+};
+
 function parseStats(d) {
   const base = {};
   for (const stat of d.stats) {
     base[stat.id] = stat.value || 10;
   }
 
+  // Gather bonuses from ALL modifier sources (race, class, feat, item, background, condition)
   const bonuses = {};
-  for (const mod of d.modifiers?.race || []) {
-    if (mod.type === "bonus" && mod.entityId && mod.value) {
-      bonuses[mod.entityId] = (bonuses[mod.entityId] || 0) + mod.value;
+  const allMods = [
+    ...(d.modifiers?.race || []),
+    ...(d.modifiers?.class || []),
+    ...(d.modifiers?.background || []),
+    ...(d.modifiers?.item || []),
+    ...(d.modifiers?.feat || []),
+    ...(d.modifiers?.condition || []),
+  ];
+
+  for (const mod of allMods) {
+    if (mod.type !== "bonus" || !mod.value) continue;
+    // Try entityId first (maps directly to stat ID 1-6)
+    let statId = mod.entityId;
+    // If no entityId, try parsing subType (e.g. "dexterity-score" → 2)
+    if (!statId && mod.subType) {
+      statId = SUBTYPE_TO_STAT_ID[mod.subType];
+    }
+    if (statId >= 1 && statId <= 6) {
+      bonuses[statId] = (bonuses[statId] || 0) + mod.value;
+    }
+  }
+
+  // Also add bonusStats (manual bonuses set on character sheet)
+  for (const bs of d.bonusStats || []) {
+    if (bs.value) {
+      bonuses[bs.id] = (bonuses[bs.id] || 0) + bs.value;
     }
   }
 
   const overrides = {};
   for (const ov of d.overrideStats || []) {
-    if (ov.value !== null) {
+    if (ov.value !== null && ov.value !== undefined) {
       overrides[ov.id] = ov.value;
     }
   }
@@ -231,29 +262,36 @@ function parseClasses(d) {
   }));
 }
 
+// armorTypeId: 1=Light, 2=Medium, 3=Heavy, 4=Shield
 function parseAC(d, stats) {
   const dexMod = stats.find((s) => s.name === "DEX")?.modifier || 0;
   const baseAC = 10 + dexMod;
 
   let armorAC = null;
+  let shieldBonus = 0;
   for (const item of d.inventory || []) {
     const def = item.definition;
-    if (!item.equipped || !def) continue;
-    if (def.armorClass) {
+    if (!item.equipped || !def || !def.armorClass) continue;
+
+    const armorType = def.armorTypeId || 0;
+    const typeStr = (def.type || "").toLowerCase();
+
+    if (armorType === 4 || typeStr.includes("shield")) {
+      shieldBonus += def.armorClass;
+      continue;
+    }
+
+    if (armorType === 3 || typeStr.includes("heavy")) {
       armorAC = def.armorClass;
-      if (def.type === "Heavy Armor") {
-        return armorAC;
-      }
-      if (def.type === "Medium Armor") {
-        return armorAC + Math.min(dexMod, 2);
-      }
-      if (def.type === "Light Armor") {
-        return armorAC + dexMod;
-      }
+    } else if (armorType === 2 || typeStr.includes("medium")) {
+      armorAC = def.armorClass + Math.min(dexMod, 2);
+    } else {
+      // Light armor (armorTypeId=1) or unknown → add full DEX
+      armorAC = def.armorClass + dexMod;
     }
   }
 
-  return armorAC ?? baseAC;
+  return (armorAC ?? baseAC) + shieldBonus;
 }
 
 function parseSpeed(d) {
@@ -290,7 +328,7 @@ function parseWeapons(d, stats, profBonus) {
     const def = item.definition;
     if (!def) continue;
 
-    const isWeapon = WEAPON_TYPES.includes(def.type);
+    const isWeapon = def.filterType === "Weapon" || def.type === "Weapon" || def.damage;
     if (!isWeapon) continue;
 
     const damage = def.damage;
@@ -311,10 +349,14 @@ function parseWeapons(d, stats, profBonus) {
       || damage?.type?.name
       || "Unknown";
 
+    const catName = CATEGORY_NAMES[def.categoryId] || "";
+    const atkName = ATTACK_TYPE_NAMES[def.attackType] || "Melee";
+    const weaponType = catName ? `${catName} ${atkName}` : `${def.type} ${atkName}`;
+
     weapons.push({
       name: def.name,
       equipped: item.equipped || false,
-      type: def.type,
+      type: weaponType,
       attackType: isRanged ? "ranged" : "melee",
       damage: damage ? damage.diceString : "1",
       damageType,

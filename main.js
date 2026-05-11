@@ -1800,112 +1800,49 @@ document.querySelectorAll(".hotbar-btn").forEach((btn) => {
 // ════════════════════════════════════════
 // CHARACTER FETCHER (multi-strategy with fallbacks)
 // ════════════════════════════════════════
-// วิธีดึงข้อมูลตัวละครจาก D&D Beyond (ลองทีละวิธี):
-//   1. เรียก Proxy API ของเรา (Vercel/Express) — ดึง+parse ฝั่ง server
-//   2. ดึงตรงจาก D&D Beyond ผ่าน CORS proxy — parse ฝั่ง client
-//   3. ลอง CORS proxy ตัวสำรอง
+// ลำดับ: 1.Local Express → 2.PROXY_URL → 3.Same-origin API → 4.Paste JSON
+//
+// D&D Beyond บล็อก cloud server IPs (Vercel/AWS/CF Workers) แต่ไม่บล็อก IP บ้าน
+// ดังนั้นลอง localhost (Express server ที่รันบนเครื่องผู้ใช้) ก่อนเสมอ
 
-const DNDB_API = (id) => `https://character-service.dndbeyond.com/character/v5/character/${id}`;
-const CORS_PROXIES = [
-  (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-  (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-];
+const LOCAL_PROXY = "http://localhost:3001";
+
+async function tryFetchCharacter(baseUrl, charId) {
+  const res = await fetch(`${baseUrl}/api/character/${charId}`);
+  const data = await res.json();
+  if (res.ok && data.character) return data.character;
+  if (res.status === 404) throw new Error("NOT_FOUND");
+  throw new Error(`HTTP_${res.status}`);
+}
 
 async function fetchCharacter(charId) {
-  // Strategy 1: Our own API proxy (Vercel serverless / Express)
-  if (PROXY_URL) {
-    try {
-      console.log("[fetch] Trying own proxy...");
-      const res = await fetch(`${PROXY_URL}/api/character/${charId}`);
-      const data = await res.json();
-      if (res.ok && data.character) {
-        console.log("[fetch] Own proxy succeeded");
-        return { success: true, character: data.character };
-      }
-      // If 403, fall through to CORS proxy
-      if (res.status !== 403) {
-        return { success: false, error: data.error || `Server error ${res.status}`, hint: data.hint };
-      }
-      console.warn("[fetch] Own proxy returned 403, trying CORS proxies...");
-    } catch (err) {
-      console.warn("[fetch] Own proxy failed:", err.message);
-    }
+  const strategies = [
+    { name: "Local server (localhost:3001)", url: LOCAL_PROXY },
+  ];
+  if (PROXY_URL && PROXY_URL !== LOCAL_PROXY) {
+    strategies.push({ name: "PROXY_URL", url: PROXY_URL });
   }
+  strategies.push({ name: "Same-origin API", url: "" });
 
-  // Strategy 2 & 3: Direct fetch via CORS proxies (parse client-side)
-  const dndbUrl = DNDB_API(charId);
-
-  for (let i = 0; i < CORS_PROXIES.length; i++) {
-    const proxyUrl = CORS_PROXIES[i](dndbUrl);
+  for (const s of strategies) {
     try {
-      console.log(`[fetch] Trying CORS proxy ${i + 1}...`);
-      const res = await fetch(proxyUrl, {
-        headers: { Accept: "application/json" },
-      });
-      if (!res.ok) {
-        console.warn(`[fetch] CORS proxy ${i + 1} returned ${res.status}`);
-        if (res.status === 403 || res.status === 404) {
-          return {
-            success: false,
-            error: res.status === 403
-              ? "ดึงข้อมูลไม่ได้ — ตัวละครนี้ไม่ได้เปิด Public"
-              : "ไม่พบตัวละคร",
-            hint: res.status === 403
-              ? 'ไปที่ D&D Beyond → Character Settings → เปิด "Public"'
-              : "ตรวจสอบ Character ID หรือ URL อีกครั้ง",
-          };
-        }
-        continue;
-      }
-      const raw = await res.json();
-      // Parse client-side using the same parser as server
-      const character = parseCharacter(raw);
-      console.log(`[fetch] CORS proxy ${i + 1} succeeded:`, character.name);
-      return { success: true, character };
+      console.log(`[fetch] Trying ${s.name}...`);
+      const char = await tryFetchCharacter(s.url, charId);
+      console.log(`[fetch] ${s.name} succeeded:`, char.name);
+      return { success: true, character: char, source: s.name };
     } catch (err) {
-      console.warn(`[fetch] CORS proxy ${i + 1} failed:`, err.message);
-    }
-  }
-
-  // Strategy 4: Try our API without PROXY_URL prefix (same-origin Vercel deployment)
-  if (!PROXY_URL) {
-    try {
-      console.log("[fetch] Trying same-origin API...");
-      const res = await fetch(`/api/character/${charId}`);
-      const data = await res.json();
-      if (res.ok && data.character) {
-        console.log("[fetch] Same-origin API succeeded");
-        return { success: true, character: data.character };
+      const code = err.message;
+      if (code === "NOT_FOUND") {
+        return { success: false, error: "ไม่พบตัวละคร", hint: "ตรวจสอบ Character ID อีกครั้ง" };
       }
-      if (res.status !== 403) {
-        return { success: false, error: data.error || `Error ${res.status}`, hint: data.hint };
-      }
-    } catch (err) {
-      console.warn("[fetch] Same-origin API failed:", err.message);
-    }
-
-    // Same-origin also 403? Try CORS proxies
-    for (let i = 0; i < CORS_PROXIES.length; i++) {
-      const proxyUrl = CORS_PROXIES[i](dndbUrl);
-      try {
-        console.log(`[fetch] (same-origin fallback) CORS proxy ${i + 1}...`);
-        const res = await fetch(proxyUrl, { headers: { Accept: "application/json" } });
-        if (!res.ok) continue;
-        const raw = await res.json();
-        const character = parseCharacter(raw);
-        console.log(`[fetch] CORS proxy ${i + 1} succeeded:`, character.name);
-        return { success: true, character };
-      } catch (err) {
-        console.warn(`[fetch] CORS proxy ${i + 1} failed:`, err.message);
-      }
+      console.warn(`[fetch] ${s.name} failed:`, code);
     }
   }
 
   return {
     success: false,
-    error: "ดึงข้อมูลตัวละครไม่สำเร็จ",
-    hint: "ลองอีกครั้ง หรือตรวจสอบว่าตัวละครเป็น Public บน D&D Beyond",
+    error: "ดึงข้อมูลอัตโนมัติไม่ได้",
+    hint: 'เปิด Local Server (cd server && npm run dev) หรือใช้แท็บ "Paste JSON"',
   };
 }
 
@@ -1927,11 +1864,11 @@ linkBtn.addEventListener("click", async () => {
   try {
     const result = await fetchCharacter(charId);
     if (!result.success) {
-      linkStatus.textContent = "ดึงอัตโนมัติไม่ได้ — ใช้ Paste JSON แทน";
+      linkStatus.innerHTML = `${result.error}<br><span style="font-size:9px;color:#e9a045">💡 เปิด Local Server หรือใช้ Paste JSON</span>`;
       linkStatus.classList.add("error");
       showError(
-        "ดึงข้อมูลอัตโนมัติไม่ได้ (D&D Beyond บล็อก server)",
-        'กดแท็บ "Paste JSON" แล้วทำตามขั้นตอน — ได้ผลเหมือนกัน!'
+        result.error,
+        result.hint
       );
       // Auto-switch to paste tab and pre-fill the ID
       switchToTab("paste");
