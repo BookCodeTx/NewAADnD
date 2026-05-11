@@ -1,4 +1,5 @@
 import OBR from "@owlbear-rodeo/sdk";
+import DiceBox from "@3d-dice/dice-box";
 import { SPELLS, getSpellcastingDC, getSaveMod, tokensInRadius, rollSave, parseDamageNotation, DPI_PER_FOOT } from "./spells.js";
 import { CONDITIONS, getConditionPenalty, shouldAutoFailSave } from "./conditions.js";
 import { playSfx } from "./sfx.js";
@@ -87,7 +88,7 @@ const initEndBtn = document.getElementById("init-end-btn");
 let currentTokenId = null;
 let currentCharData = null;
 let currentConditions = [];
-let diceModalOpen = false;
+// 3D dice now embedded in popover (no separate modal)
 
 // Combat state machine
 const COMBAT = { IDLE: "IDLE", TARGETING: "TARGETING", ROLLING_ATTACK: "ROLLING_ATTACK", ROLLING_DAMAGE: "ROLLING_DAMAGE", AOE_CASTING: "AOE_CASTING" };
@@ -130,7 +131,7 @@ combatCancel.addEventListener("click", async () => {
   // Panic close all modals
   try { await OBR.modal.close(DICE_MODAL_ID); } catch {}
   try { await OBR.modal.close(FLOATER_MODAL_ID); } catch {}
-  diceModalOpen = false;
+  // diceModalOpen removed (3D dice now embedded in popover)
   floaterModalOpen = false;
   resetCombat();
   OBR.notification.show("Combat cancelled.", "INFO");
@@ -147,7 +148,7 @@ function resetCombat() {
   attackRollResult = null;
   selectedSpell = null;
   selectedWeapon = null;
-  diceModalOpen = false;
+  // diceModalOpen removed (3D dice now embedded in popover)
   floaterModalOpen = false;
   hideCombatOverlay();
   hideSpellPicker();
@@ -1198,10 +1199,8 @@ OBR.onReady(async () => {
     else { hideAll(); resetCombat(); }
   });
 
-  // Listen for dice modal close (3D dice finished its animation)
-  OBR.broadcast.onMessage(`${DICE_CHANNEL}/result`, () => {
-    diceModalOpen = false;
-  });
+  // Initialize 3D dice (non-blocking)
+  initDiceBox();
 
   // Listen for initiative state changes from other players
   OBR.room.onMetadataChange((metadata) => {
@@ -1559,10 +1558,45 @@ async function syncInitiativeHP() {
 // DICE SYSTEM (self-contained, no modal dependency)
 // ════════════════════════════════════════
 
+// ── 3D Dice (embedded in popover) ──
+const diceOverlay = document.getElementById("dice-overlay");
+const dice3dLabel = document.getElementById("dice-3d-label");
+const dice3dResult = document.getElementById("dice-3d-result");
 const diceResultEl = document.getElementById("dice-result");
 const diceResultLabel = document.getElementById("dice-result-label");
 const diceResultValue = document.getElementById("dice-result-value");
 const diceResultDetail = document.getElementById("dice-result-detail");
+
+let diceBox = null;
+let diceReady = false;
+let diceInitializing = false;
+
+async function initDiceBox() {
+  if (diceReady || diceInitializing) return;
+  diceInitializing = true;
+  try {
+    diceBox = new DiceBox("#dice-box", {
+      assetPath: "/dice-assets/assets/",
+      origin: "/dice-assets/",
+      scale: 6,
+      theme: "default",
+      gravity: 2,
+      mass: 1,
+      friction: 0.8,
+      restitution: 0.5,
+      linearDamping: 0.5,
+      angularDamping: 0.4,
+      settleTimeout: 4000,
+    });
+    await diceBox.init();
+    diceReady = true;
+    console.log("[dice] 3D dice-box initialized in popover");
+  } catch (err) {
+    console.warn("[dice] 3D dice init failed, will use text fallback:", err.message);
+    diceReady = false;
+  }
+  diceInitializing = false;
+}
 
 function rollDiceValues(notation) {
   let diceTotal = 0;
@@ -1592,7 +1626,6 @@ function showDiceResultDisplay(label, result) {
   const detail = modifier !== 0 ? `${diceTotal}${modStr} = ${finalTotal}` : `${diceTotal}`;
 
   diceResultLabel.textContent = label || "";
-
   let extraText = "";
   diceResultEl.className = "";
   if (natValue === 20) { diceResultEl.classList.add("nat-crit"); extraText = " NAT 20!"; }
@@ -1602,90 +1635,123 @@ function showDiceResultDisplay(label, result) {
   diceResultDetail.textContent = detail + extraText;
   diceResultEl.classList.add("visible");
 
-  // Auto-hide after 2s
   clearTimeout(diceResultEl._hideTimer);
   diceResultEl._hideTimer = setTimeout(() => {
     diceResultEl.classList.remove("visible", "nat-crit", "nat-fail");
   }, 2500);
 }
 
+function show3DResult(label, result) {
+  const { diceTotal, modifier, finalTotal, natValue } = result;
+  const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
+  const detail = modifier !== 0 ? `${diceTotal}${modStr} = ${finalTotal}` : "";
+
+  let extraHtml = "";
+  diceOverlay.className = "visible";
+  if (natValue === 20) { diceOverlay.classList.add("nat-crit"); extraHtml = '<div class="dice-extra">NATURAL 20!</div>'; }
+  else if (natValue === 1) { diceOverlay.classList.add("nat-fail"); extraHtml = '<div class="dice-extra">NATURAL 1...</div>'; }
+
+  dice3dResult.innerHTML = `
+    ${extraHtml}
+    <div class="dice-total">${finalTotal}</div>
+    ${detail ? `<div class="dice-detail">${detail}</div>` : ""}
+  `;
+  dice3dResult.classList.add("visible");
+}
+
 async function rollDice(notation, label, modifier = 0, rollId = null) {
   const rid = rollId || crypto.randomUUID();
   pendingRollId = rid;
 
-  // Generate result immediately — no modal dependency
-  const { diceTotal, isSingleD20 } = rollDiceValues(notation);
+  // Generate result immediately (fallback values)
+  const { diceTotal: fallbackTotal, isSingleD20 } = rollDiceValues(notation);
+  let diceTotal = fallbackTotal;
+  let used3D = false;
+
+  const charName = attackerData?.name || currentCharData?.name || "";
+
+  // Try 3D dice
+  if (diceReady && diceBox) {
+    try {
+      // Show overlay with label
+      diceOverlay.className = "visible";
+      dice3dLabel.textContent = label || notation;
+      dice3dResult.classList.remove("visible");
+      dice3dResult.innerHTML = "";
+
+      // Clear previous dice
+      try { diceBox.clear(); } catch {}
+
+      // Roll 3D dice with timeout
+      const results = await Promise.race([
+        diceBox.roll(notation),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+      ]);
+
+      // Use 3D dice result instead of fallback
+      diceTotal = results.reduce((sum, r) => sum + r.value, 0);
+      used3D = true;
+      playSfx("dice-hit");
+
+      // Short pause to appreciate the dice
+      await new Promise((r) => setTimeout(r, 600));
+
+    } catch (err) {
+      console.warn("[dice] 3D roll failed, using fallback:", err.message);
+      diceOverlay.className = "";
+      playSfx("dice-hit");
+    }
+  } else {
+    playSfx("dice-hit");
+  }
+
   const finalTotal = diceTotal + modifier;
   const natValue = isSingleD20 ? diceTotal : null;
 
   const result = {
     notation, diceTotal, modifier, finalTotal, natValue,
-    charName: attackerData?.name || currentCharData?.name || "",
-    label, rollId: rid,
+    charName, label, rollId: rid,
   };
 
-  // SFX
-  playSfx("dice-hit");
+  // SFX for nat 20/1
   if (natValue === 20) setTimeout(() => playSfx("crit"), 150);
   else if (natValue === 1) setTimeout(() => playSfx("miss"), 150);
 
-  // Show result in popover
-  showDiceResultDisplay(label, result);
+  // Show result
+  if (used3D) {
+    show3DResult(label, result);
+  } else {
+    showDiceResultDisplay(label, result);
+  }
 
-  // Broadcast SFX to all players
+  // Broadcast SFX + notification to all players
   const sfxName = natValue === 20 ? "crit" : natValue === 1 ? "miss" : "dice-hit";
   OBR.broadcast.sendMessage(SFX_CHANNEL, { sound: sfxName }).catch(() => {});
 
-  // Notify all players
   const modStr = modifier > 0 ? `+${modifier}` : modifier < 0 ? `${modifier}` : "";
-  const charName = result.charName;
   const notifText = charName
     ? `${charName} rolled ${notation}${modStr}: ${finalTotal}${natValue === 20 ? " (NAT 20!)" : natValue === 1 ? " (NAT 1)" : ""}`
     : `Rolled ${notation}${modStr}: ${finalTotal}`;
   OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
 
-  // Short dramatic pause, then process result
-  await new Promise((r) => setTimeout(r, 1000));
+  // Dramatic pause
+  await new Promise((r) => setTimeout(r, used3D ? 1500 : 1000));
 
-  // Process combat result if this roll is still the pending one
+  // Process combat result
   if (pendingRollId === rid) {
     if (combatState === COMBAT.ROLLING_ATTACK || combatState === COMBAT.ROLLING_DAMAGE) {
       handleDiceResult(result);
     }
   }
 
-  // Try 3D dice modal in background (non-blocking, purely visual)
-  try3DDice(notation, label, modifier, rid);
-}
-
-function try3DDice(notation, label, modifier, rollId) {
-  // Fire-and-forget: open dice modal for visual flair only
-  // Hard auto-close after 5s regardless of dice result, to prevent
-  // invisible modal overlay from blocking map clicks.
-  if (diceModalOpen) return;
-
-  diceModalOpen = true;
-
-  // Force-close after 5 seconds NO MATTER WHAT
-  const forceClose = setTimeout(async () => {
-    try { await OBR.modal.close(DICE_MODAL_ID); } catch {}
-    diceModalOpen = false;
-  }, 5000);
-
-  OBR.modal.open({ id: DICE_MODAL_ID, url: "/dice.html", fullScreen: true, hidePaper: true, hideBackdrop: true })
-    .then(() => {
-      setTimeout(() => {
-        OBR.broadcast.sendMessage(DICE_CHANNEL, {
-          notation, label, modifier,
-          charName: attackerData?.name || currentCharData?.name || "",
-          rollId,
-        }).catch(() => {});
-      }, 800);
-    })
-    .catch(() => {
-      clearTimeout(forceClose);
-      diceModalOpen = false;
-    });
+  // Auto-hide 3D overlay
+  if (used3D) {
+    setTimeout(() => {
+      diceOverlay.className = "";
+      dice3dResult.classList.remove("visible");
+      try { diceBox?.clear(); } catch {}
+    }, 2000);
+  }
 }
 
 function getAttackMod(char) {
