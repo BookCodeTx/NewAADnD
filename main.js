@@ -229,39 +229,30 @@ function onSpellSelected(key, spell) {
 function hideActionPicker() { actionPicker.classList.remove("visible"); }
 
 const attackInputPanel = document.getElementById("attack-input-panel");
-const attackInput = document.getElementById("attack-input");
 const attackInputTitle = document.getElementById("attack-input-title");
 const attackInputInfo = document.getElementById("attack-input-info");
 
 function showAttackInput(title, info) {
-  attackInputTitle.textContent = title || "Enter Attack Roll";
+  attackInputTitle.textContent = title || "Attack Result";
   attackInputInfo.textContent = info || "";
-  attackInput.value = "";
   attackInputPanel.classList.add("visible");
-  attackInput.focus();
 }
 
 function hideAttackInput() { attackInputPanel.classList.remove("visible"); }
 
-document.getElementById("attack-apply-btn").addEventListener("click", () => submitAttackRoll());
-attackInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submitAttackRoll(); });
-document.getElementById("attack-cancel").addEventListener("click", () => { hideAttackInput(); resetCombat(); });
-
-async function submitAttackRoll() {
-  const val = attackInput.value.trim();
-  if (!val) { attackInput.focus(); return; }
-  const rollTotal = parseInt(val);
-  if (isNaN(rollTotal)) { attackInput.focus(); return; }
+document.getElementById("atk-btn-miss").addEventListener("click", () => {
   hideAttackInput();
-
-  const isNat20 = rollTotal === 20 || val === "20";
-  const isNat1 = rollTotal === 1 || val === "1";
-
-  await resolveAttackRoll({
-    finalTotal: rollTotal,
-    natValue: (isNat20 ? 20 : isNat1 ? 1 : null),
-  });
-}
+  resolveAttackRoll({ finalTotal: 0, natValue: 1 });
+});
+document.getElementById("atk-btn-hit").addEventListener("click", () => {
+  hideAttackInput();
+  resolveAttackRoll({ finalTotal: 99, natValue: null });
+});
+document.getElementById("atk-btn-crit").addEventListener("click", () => {
+  hideAttackInput();
+  resolveAttackRoll({ finalTotal: 99, natValue: 20 });
+});
+document.getElementById("attack-cancel").addEventListener("click", () => { hideAttackInput(); resetCombat(); });
 
 const damageInputPanel = document.getElementById("damage-input-panel");
 const damageInput = document.getElementById("damage-input");
@@ -994,11 +985,18 @@ async function setInitiativeState(state) {
 
 function renderInitiative(state) {
   if (!state || !state.order || state.order.length === 0) {
-    initiativeBar.classList.remove("visible");
+    initTrack.innerHTML = "";
+    initRoundEl.textContent = "";
+    initNextBtn.classList.add("hidden");
+    initEndBtn.classList.add("hidden");
+    initRollBtn.classList.remove("hidden");
+    document.getElementById("init-input-panel").classList.remove("visible");
     return;
   }
 
-  initiativeBar.classList.add("visible");
+  initRollBtn.classList.add("hidden");
+  initNextBtn.classList.remove("hidden");
+  initEndBtn.classList.remove("hidden");
   initRoundEl.textContent = `Round ${state.round || 1}`;
   document.getElementById("init-input-panel").classList.remove("visible");
 
@@ -1270,9 +1268,8 @@ async function pickTarget(targetToken) {
   logCombat(`<strong>${attackerData.name}</strong> targets <strong>${targetName}</strong> (AC ${targetAC})`);
 
   combatState = COMBAT.ROLLING_ATTACK;
-  const actionLabel = combatAction === "spell" ? "Spell Attack" : "Attack";
-  showCombatOverlay(`${attackerData.name} → ${targetName}`, `Enter ${actionLabel} roll vs AC ${targetAC}`);
-  showAttackInput(`${attackerData.name} ${actionLabel} → ${targetName}`, `Target AC: ${targetAC}`);
+  showCombatOverlay(`${attackerData.name} → ${targetName}`, `AC ${targetAC} — Hit or Miss?`);
+  showAttackInput(`${attackerData.name} → ${targetName}`, `Target AC: ${targetAC}`);
 }
 
 
@@ -1316,37 +1313,30 @@ async function castSingleTargetSaveSpell(targetToken) {
 
 
 async function resolveAttackRoll(result) {
-  const { finalTotal, natValue } = result;
+  const { natValue } = result;
   const targetName = targetData?.name || "Target";
-  const targetAC = targetData?.ac ?? 10;
   const isCrit = natValue === 20;
-  const isNat1 = natValue === 1;
-  const isHit = isCrit || (!isNat1 && finalTotal >= targetAC);
+  const isMiss = natValue === 1;
 
-  if (isCrit) {
-    logCombat(`Attack Roll: <strong class="crit">${finalTotal}</strong> vs AC ${targetAC} — <strong class="crit">CRITICAL HIT!</strong>`, "crit");
-    showCombatOverlay(`CRITICAL HIT!`, `Enter damage below`);
-  } else if (isNat1) {
-    logCombat(`Attack Roll: <strong class="miss">${finalTotal}</strong> — <strong class="miss">CRITICAL MISS!</strong>`, "miss");
-    showCombatOverlay(`CRITICAL MISS!`, `${attackerData.name} whiffs completely.`);
+  if (isMiss) {
+    logCombat(`<strong>${attackerData.name}</strong> → ${targetName}: <strong class="miss">MISS!</strong>`, "miss");
+    showCombatOverlay(`MISS!`, `${attackerData.name}'s attack misses.`);
     playMissEffect();
     await broadcastSfx("miss");
-    await OBR.notification.show(`${attackerData.name} critically missed ${targetName}!`, "ERROR");
-    setTimeout(() => resetCombat(), 2000);
-    return;
-  } else if (isHit) {
-    logCombat(`Attack Roll: <strong class="hit">${finalTotal}</strong> vs AC ${targetAC} — <strong class="hit">HIT!</strong>`, "hit");
-    showCombatOverlay(`HIT! (${finalTotal} vs AC ${targetAC})`, `Enter damage below`);
-  } else {
-    logCombat(`Attack Roll: <strong class="miss">${finalTotal}</strong> vs AC ${targetAC} — <strong class="miss">MISS</strong>`, "miss");
-    showCombatOverlay(`MISS! (${finalTotal} vs AC ${targetAC})`, `${attackerData.name}'s attack fails to connect.`);
-    playMissEffect();
-    await broadcastSfx("miss");
-    await OBR.notification.show(`${attackerData.name} missed ${targetName} (${finalTotal} vs AC ${targetAC})`, "WARNING");
+    await OBR.notification.show(`${attackerData.name} missed ${targetName}!`, "WARNING");
     setTimeout(() => resetCombat(), 2000);
     return;
   }
 
+  if (isCrit) {
+    logCombat(`<strong>${attackerData.name}</strong> → ${targetName}: <strong class="crit">CRITICAL HIT!</strong>`, "crit");
+    showCombatOverlay(`CRITICAL HIT!`, `Enter damage below`);
+  } else {
+    logCombat(`<strong>${attackerData.name}</strong> → ${targetName}: <strong class="hit">HIT!</strong>`, "hit");
+    showCombatOverlay(`HIT!`, `Enter damage below`);
+  }
+
+  attackRollResult = { natValue };
   combatState = COMBAT.ROLLING_DAMAGE;
   const hitLabel = isCrit ? `CRIT! Enter damage → ${targetName}` : `HIT! Enter damage → ${targetName}`;
   showDamageInput(hitLabel);
