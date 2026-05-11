@@ -222,12 +222,23 @@ function onSpellSelected(key, spell) {
 // ════════════════════════════════════════
 
 function calcWeaponAttackMod(char, weapon) {
+  // Use pre-calculated attackBonus from parser if available
+  if (weapon.attackBonus != null) return weapon.attackBonus;
   const isFinesse = weapon.properties?.includes("Finesse");
-  const isRanged = weapon.type?.includes("Ranged");
+  const isRanged = weapon.attackType === "ranged" || weapon.type?.includes("Ranged");
   const str = char.stats.find((s) => s.name === "STR")?.modifier || 0;
   const dex = char.stats.find((s) => s.name === "DEX")?.modifier || 0;
   const ability = isRanged ? dex : isFinesse ? Math.max(str, dex) : str;
   return ability + char.proficiencyBonus;
+}
+
+function getWeaponDamageMod(char, weapon) {
+  if (weapon.damageMod != null) return weapon.damageMod;
+  const isFinesse = weapon.properties?.includes("Finesse");
+  const isRanged = weapon.attackType === "ranged" || weapon.type?.includes("Ranged");
+  const str = char.stats.find((s) => s.name === "STR")?.modifier || 0;
+  const dex = char.stats.find((s) => s.name === "DEX")?.modifier || 0;
+  return isRanged ? dex : isFinesse ? Math.max(str, dex) : str;
 }
 
 function buildActionGrid() {
@@ -235,7 +246,6 @@ function buildActionGrid() {
   const weapons = currentCharData?.weapons || [];
 
   if (weapons.length === 0) {
-    // Unarmed strike fallback
     const str = currentCharData.stats.find((s) => s.name === "STR")?.modifier || 0;
     const card = document.createElement("div");
     card.className = "action-card";
@@ -248,31 +258,49 @@ function buildActionGrid() {
         <span class="action-stat atk">+${str + currentCharData.proficiencyBonus}</span>
         <span class="action-stat dmg">1+${str}</span>
       </div>`;
-    card.addEventListener("click", () => onWeaponSelected({ name: "Unarmed", damage: "1d1", damageType: "Bludgeoning", type: "Simple Melee", properties: [], range: "5" }));
+    card.addEventListener("click", () => onWeaponSelected({
+      name: "Unarmed Strike", damage: "1", damageType: "Bludgeoning",
+      type: "Simple Melee", attackType: "melee", properties: [], mastery: [],
+      attackBonus: str + currentCharData.proficiencyBonus, damageMod: str,
+      range: 5, longRange: 5,
+    }));
     actionGrid.appendChild(card);
     return;
   }
 
   for (const w of weapons) {
     const atkMod = calcWeaponAttackMod(currentCharData, w);
-    const isRanged = w.type?.includes("Ranged");
-    const isFinesse = w.properties?.includes("Finesse");
-    const str = currentCharData.stats.find((s) => s.name === "STR")?.modifier || 0;
-    const dex = currentCharData.stats.find((s) => s.name === "DEX")?.modifier || 0;
-    const dmgMod = isRanged ? dex : isFinesse ? Math.max(str, dex) : str;
+    const dmgMod = getWeaponDamageMod(currentCharData, w);
+    const isRanged = w.attackType === "ranged" || w.type?.includes("Ranged");
+    const rangeStr = isRanged ? `${w.range}/${w.longRange}` : `${w.range}ft`;
+    const typeIcon = isRanged ? "🏹" : "⚔️";
+    const typeLabel = isRanged ? "Ranged" : "Melee";
+
+    // Build property tags
+    const props = w.properties || [];
+    const mastery = w.mastery || [];
+    let tagsHtml = "";
+    for (const p of props) {
+      tagsHtml += `<span class="wpn-tag">${p}</span>`;
+    }
+    for (const m of mastery) {
+      tagsHtml += `<span class="wpn-tag mastery">${m}</span>`;
+    }
+
+    // Damage display: "1d6+3 Slashing"
+    const dmgSign = dmgMod >= 0 ? "+" : "";
+    const dmgStr = dmgMod !== 0 ? `${w.damage}${dmgSign}${dmgMod}` : w.damage;
 
     const card = document.createElement("div");
-    card.className = "action-card";
-    const equipBadge = w.equipped ? " ⚔️" : "";
-    const propStr = w.properties?.length ? w.properties.join(", ") : "—";
+    card.className = "action-card" + (w.equipped ? " equipped" : "");
     card.innerHTML = `
       <div style="flex:1; min-width:0">
-        <div class="action-name">${w.name}${equipBadge}</div>
-        <div class="action-info">${w.type} · ${w.range}ft · ${propStr}</div>
+        <div class="action-name">${typeIcon} ${w.name}${w.equipped ? " <span class='equip-badge'>E</span>" : ""}</div>
+        <div class="action-info">${typeLabel} · ${rangeStr}${tagsHtml ? " · " + tagsHtml : ""}</div>
       </div>
       <div class="action-stats">
         <span class="action-stat atk">${atkMod >= 0 ? "+" : ""}${atkMod}</span>
-        <span class="action-stat dmg">${w.damage}${dmgMod >= 0 ? "+" : ""}${dmgMod}</span>
+        <span class="action-stat dmg">${dmgStr} <small>${w.damageType || ""}</small></span>
       </div>`;
     card.addEventListener("click", () => onWeaponSelected(w));
     actionGrid.appendChild(card);
@@ -1361,11 +1389,7 @@ async function resolveAttackRoll(result) {
     } else {
       damageNotation = baseDamage;
     }
-    const isFinesse = weapon?.properties?.includes("Finesse");
-    const isRanged = weapon?.type?.includes("Ranged");
-    const str = attackerData.stats.find((s) => s.name === "STR")?.modifier || 0;
-    const dex = attackerData.stats.find((s) => s.name === "DEX")?.modifier || 0;
-    damageMod = isRanged ? dex : isFinesse ? Math.max(str, dex) : str;
+    damageMod = getWeaponDamageMod(attackerData, weapon || {});
     damageLabel = `${attackerData.name} Damage (${weapon?.name || "Unarmed"})`;
   }
 

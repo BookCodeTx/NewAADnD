@@ -15,9 +15,9 @@ export function parseCharacter(raw) {
 
   const stats = parseStats(d);
   const hp = parseHP(d, getConMod(stats));
-  const weapons = parseWeapons(d);
   const classes = parseClasses(d);
   const profBonus = getProficiencyBonus(classes);
+  const weapons = parseWeapons(d, stats, profBonus);
   const skills = parseSkills(d, stats, profBonus);
   const bonusActions = parseBonusActions(d, classes, weapons);
 
@@ -261,8 +261,30 @@ function parseSpeed(d) {
   return walking;
 }
 
-function parseWeapons(d) {
+const MASTERY_PROPERTIES = ["Nick", "Vex", "Slow", "Graze", "Cleave", "Topple", "Push", "Sap"];
+
+function parseWeapons(d, stats, profBonus) {
   const weapons = [];
+  const strMod = stats.find((s) => s.name === "STR")?.modifier || 0;
+  const dexMod = stats.find((s) => s.name === "DEX")?.modifier || 0;
+
+  // Gather global attack/damage bonuses from modifiers
+  const allMods = [
+    ...(d.modifiers?.race || []),
+    ...(d.modifiers?.class || []),
+    ...(d.modifiers?.background || []),
+    ...(d.modifiers?.item || []),
+    ...(d.modifiers?.feat || []),
+    ...(d.modifiers?.condition || []),
+  ];
+  let globalAtkBonus = 0;
+  let globalDmgBonus = 0;
+  for (const mod of allMods) {
+    if (mod.type === "bonus" && mod.value) {
+      if (mod.subType === "weapon-attacks") globalAtkBonus += mod.value;
+      if (mod.subType === "weapon-damage") globalDmgBonus += mod.value;
+    }
+  }
 
   for (const item of d.inventory || []) {
     const def = item.definition;
@@ -272,16 +294,54 @@ function parseWeapons(d) {
     if (!isWeapon) continue;
 
     const damage = def.damage;
+    const props = (def.properties || []).map((p) => p.name);
+    const isFinesse = props.includes("Finesse");
+    const isRanged = (def.attackType === 2) || def.type?.includes("Ranged");
+    const abilityMod = isRanged ? dexMod : isFinesse ? Math.max(strMod, dexMod) : strMod;
+    const attackBonus = abilityMod + profBonus + globalAtkBonus;
+    const damageMod = abilityMod + globalDmgBonus;
+
+    // Separate regular properties and weapon mastery
+    const regularProps = props.filter((p) => !MASTERY_PROPERTIES.includes(p));
+    const mastery = props.filter((p) => MASTERY_PROPERTIES.includes(p));
+
+    // Damage type from def.damageType (string) or def.damage.damageType or def.damage.type.name
+    const damageType = def.damageType
+      || damage?.damageType
+      || damage?.type?.name
+      || "Unknown";
+
     weapons.push({
       name: def.name,
       equipped: item.equipped || false,
       type: def.type,
-      damage: damage ? `${damage.diceString}` : "—",
-      damageType: damage?.type?.name || "Unknown",
-      range: def.range ? `${def.range}/${def.longRange || def.range}` : "5",
-      properties: (def.properties || []).map((p) => p.name),
+      attackType: isRanged ? "ranged" : "melee",
+      damage: damage ? damage.diceString : "1",
+      damageType,
+      damageMod,
+      attackBonus,
+      range: def.range || 5,
+      longRange: def.longRange || def.range || 5,
+      properties: regularProps,
+      mastery,
     });
   }
+
+  // Always add Unarmed Strike
+  weapons.push({
+    name: "Unarmed Strike",
+    equipped: true,
+    type: "Simple Melee",
+    attackType: "melee",
+    damage: "1",
+    damageType: "Bludgeoning",
+    damageMod: strMod,
+    attackBonus: strMod + profBonus,
+    range: 5,
+    longRange: 5,
+    properties: [],
+    mastery: [],
+  });
 
   return weapons;
 }

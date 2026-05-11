@@ -90,15 +90,20 @@
     #action-picker.visible { display: block; }
     .action-picker-title { color: #e94560; font-size: 11px; font-weight: 700; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
     .action-grid { display: grid; grid-template-columns: 1fr; gap: 4px; }
-    .action-card { padding: 6px 10px; background: #1a0d0d; border: 1px solid #4a1a1a; border-radius: 6px; cursor: pointer; transition: all 0.15s; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .action-card { padding: 8px 10px; background: #1a0d0d; border: 1px solid #4a1a1a; border-radius: 6px; cursor: pointer; transition: all 0.15s; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     .action-card:hover { border-color: #e94560; background: #2a1010; transform: translateX(2px); }
+    .action-card.equipped { border-color: #6a3a3a; background: #1e1010; }
     .action-card .action-name { font-size: 11px; font-weight: 700; color: #ffd0d0; }
-    .action-card .action-info { font-size: 9px; color: #a07070; margin-top: 2px; }
-    .action-card .action-stats { display: flex; gap: 4px; flex-shrink: 0; }
-    .action-stat { font-size: 9px; padding: 2px 6px; border-radius: 3px; background: #0d0d1a; color: #fff; font-weight: 700; }
+    .action-card .action-info { font-size: 9px; color: #a07070; margin-top: 3px; display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+    .action-card .action-stats { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; align-items: flex-end; }
+    .action-stat { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: #0d0d1a; color: #fff; font-weight: 700; white-space: nowrap; }
     .action-stat.atk { background: #e94560; }
     .action-stat.dmg { background: #e9a045; color: #0d0d1a; }
     .action-stat.range { background: #4488e9; }
+    .action-stat small { font-weight: 400; font-size: 8px; opacity: 0.8; }
+    .equip-badge { font-size: 8px; background: #4a8; color: #fff; padding: 1px 4px; border-radius: 3px; vertical-align: middle; }
+    .wpn-tag { font-size: 8px; padding: 1px 4px; border-radius: 3px; background: #2a2040; color: #b0a0c8; border: 1px solid #3a2a50; }
+    .wpn-tag.mastery { background: #3a1a10; color: #ffaa66; border-color: #6a3a20; font-weight: 600; }
     .action-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #e9456044; border-radius: 4px; background: none; color: #e94560; font-size: 10px; cursor: pointer; }
     .action-cancel:hover { background: #e9456022; }
 
