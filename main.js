@@ -155,6 +155,7 @@ function resetCombat() {
   hideSpellPicker();
   hideActionPicker();
   hideBonusPicker();
+  hideAttackInput();
   hideDamageInput();
   hideAoeResults();
   document.querySelectorAll(".hotbar-btn").forEach((b) => b.classList.remove("active-action"));
@@ -225,18 +226,42 @@ function onSpellSelected(key, spell) {
 // ATTACK (simplified — manual damage input)
 // ════════════════════════════════════════
 
-function getAttackModifier(char) {
-  const weapon = char.weapons?.find((w) => w.equipped) || char.weapons?.[0];
-  if (weapon?.attackBonus != null) return weapon.attackBonus;
-  const str = char.stats.find((s) => s.name === "STR")?.modifier || 0;
-  const dex = char.stats.find((s) => s.name === "DEX")?.modifier || 0;
-  const isRanged = weapon?.attackType === "ranged";
-  const isFinesse = weapon?.properties?.includes("Finesse");
-  const ability = isRanged ? dex : isFinesse ? Math.max(str, dex) : str;
-  return ability + char.proficiencyBonus;
+function hideActionPicker() { actionPicker.classList.remove("visible"); }
+
+const attackInputPanel = document.getElementById("attack-input-panel");
+const attackInput = document.getElementById("attack-input");
+const attackInputTitle = document.getElementById("attack-input-title");
+const attackInputInfo = document.getElementById("attack-input-info");
+
+function showAttackInput(title, info) {
+  attackInputTitle.textContent = title || "Enter Attack Roll";
+  attackInputInfo.textContent = info || "";
+  attackInput.value = "";
+  attackInputPanel.classList.add("visible");
+  attackInput.focus();
 }
 
-function hideActionPicker() { actionPicker.classList.remove("visible"); }
+function hideAttackInput() { attackInputPanel.classList.remove("visible"); }
+
+document.getElementById("attack-apply-btn").addEventListener("click", () => submitAttackRoll());
+attackInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submitAttackRoll(); });
+document.getElementById("attack-cancel").addEventListener("click", () => { hideAttackInput(); resetCombat(); });
+
+async function submitAttackRoll() {
+  const val = attackInput.value.trim();
+  if (!val) { attackInput.focus(); return; }
+  const rollTotal = parseInt(val);
+  if (isNaN(rollTotal)) { attackInput.focus(); return; }
+  hideAttackInput();
+
+  const isNat20 = rollTotal === 20 || val === "20";
+  const isNat1 = rollTotal === 1 || val === "1";
+
+  await resolveAttackRoll({
+    finalTotal: rollTotal,
+    natValue: (isNat20 ? 20 : isNat1 ? 1 : null),
+  });
+}
 
 const damageInputPanel = document.getElementById("damage-input-panel");
 const damageInput = document.getElementById("damage-input");
@@ -1226,38 +1251,14 @@ async function pickTarget(targetToken) {
     return;
   }
 
-  showCombatOverlay(`${attackerData.name} → ${targetName}`, `Rolling attack vs AC ${targetAC}...`);
   logCombat(`<strong>${attackerData.name}</strong> targets <strong>${targetName}</strong> (AC ${targetAC})`);
 
   combatState = COMBAT.ROLLING_ATTACK;
-  let modifier, label;
-
-  const attackerConds = await getTokenConditions(attackerTokenId);
-  const { penalty, bonus } = getConditionPenalty(attackerConds);
-
-  if (combatAction === "spell") {
-    const intMod = attackerData.stats.find((s) => s.name === "INT")?.modifier || 0;
-    const wisMod = attackerData.stats.find((s) => s.name === "WIS")?.modifier || 0;
-    const chaMod = attackerData.stats.find((s) => s.name === "CHA")?.modifier || 0;
-    modifier = Math.max(intMod, wisMod, chaMod) + attackerData.proficiencyBonus;
-    label = `${attackerData.name} Spell Attack → ${targetName}`;
-  } else {
-    modifier = getAttackModifier(attackerData);
-    label = `${attackerData.name} Attack → ${targetName}`;
-  }
-
-  modifier += penalty + bonus;
-  if (penalty) logCombat(`Condition penalty: ${penalty} to attack`, "condition");
-
-  pendingRollId = crypto.randomUUID();
-  await rollDice("1d20", label, modifier, pendingRollId);
+  const actionLabel = combatAction === "spell" ? "Spell Attack" : "Attack";
+  showCombatOverlay(`${attackerData.name} → ${targetName}`, `Enter ${actionLabel} roll vs AC ${targetAC}`);
+  showAttackInput(`${attackerData.name} ${actionLabel} → ${targetName}`, `Target AC: ${targetAC}`);
 }
 
-async function getTokenConditions(tokenId) {
-  if (!tokenId) return [];
-  const items = await OBR.scene.items.getItems([tokenId]);
-  return items[0]?.metadata?.[COND_METADATA_KEY] || [];
-}
 
 async function castSingleTargetSaveSpell(targetToken) {
   const spell = selectedSpell;
@@ -1297,9 +1298,6 @@ async function castSingleTargetSaveSpell(targetToken) {
   showDamageInput(`${spell.name} → ${name} (${saveLabel})`);
 }
 
-async function handleDiceResult(result) {
-  if (combatState === COMBAT.ROLLING_ATTACK) { attackRollResult = result; await resolveAttackRoll(result); }
-}
 
 async function resolveAttackRoll(result) {
   const { finalTotal, natValue } = result;
@@ -1616,12 +1614,6 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
   // Dramatic pause
   await new Promise((r) => setTimeout(r, used3D ? 1500 : 1000));
 
-  // Process combat result
-  if (pendingRollId === rid) {
-    if (combatState === COMBAT.ROLLING_ATTACK) {
-      handleDiceResult(result);
-    }
-  }
 
   // Auto-hide 3D overlay
   if (used3D) {
