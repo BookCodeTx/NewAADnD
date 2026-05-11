@@ -240,6 +240,22 @@
     #monster-status.error { color: #e94560; font-weight: 600; }
     #monster-status.success { color: #45e9a0; }
     .monster-template-hint { font-size: 9px; color: #556677; margin-top: 2px; text-align: center; }
+    .paste-instructions { background: #0a1020; border: 1px solid #1a2a4e; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+    .paste-step { font-size: 10px; color: #8899bb; margin: 3px 0; line-height: 1.5; }
+    .paste-step strong { color: #e9a045; }
+    #paste-json { width: 100%; min-height: 60px; max-height: 120px; resize: vertical; padding: 6px 10px; background: #0f3460; border: 1px solid #1a3a6e; border-radius: 6px; color: #e0e0e0; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 9px; line-height: 1.4; outline: none; }
+    #paste-json:focus { border-color: #e94560; }
+    #paste-json::placeholder { color: #556677; }
+    .paste-open-btn { padding: 6px 10px; background: #2a6ae9; color: #fff; border: none; border-radius: 6px; font-size: 10px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .paste-open-btn:hover { background: #3a7af9; }
+    #paste-apply-btn { padding: 6px 14px; background: #45e9a0; color: #0d0d1a; border: none; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; }
+    #paste-apply-btn:hover { background: #55f9b0; }
+    #paste-status { color: #8899aa; font-size: 10px; margin-top: 4px; text-align: center; }
+    #paste-status.error { color: #e94560; font-weight: 600; }
+    #paste-status.success { color: #45e9a0; }
+    #paste-id-input { flex: 1; padding: 6px 10px; background: #0f3460; border: 1px solid #1a3a6e; border-radius: 6px; color: #e0e0e0; font-size: 12px; outline: none; min-width: 0; }
+    #paste-id-input:focus { border-color: #e94560; }
+    #paste-id-input::placeholder { color: #556677; }
 
     /* ═══ ERROR / COMBAT ═══ */
     #error-banner { display: none; flex-direction: column; gap: 4px; padding: 10px 14px; background: linear-gradient(180deg, #3a1020, #2a0a18); border: 2px solid #e94560; border-radius: 10px; margin-bottom: 6px; max-width: 480px; animation: shake 0.4s ease; }
@@ -355,13 +371,30 @@
       <div id="link-status">Select a token to link a character.</div>
       <div class="link-tabs">
         <div class="link-tab active" data-tab="dndbeyond">D&D Beyond</div>
-        <div class="link-tab" data-tab="monster">Monster JSON</div>
+        <div class="link-tab" data-tab="paste">Paste JSON</div>
+        <div class="link-tab" data-tab="monster">Monster</div>
       </div>
       <div class="link-content" id="tab-dndbeyond">
         <div class="link-row">
           <input id="link-input" type="text" placeholder="D&D Beyond ID or URL..." />
           <button id="link-btn">Link</button>
         </div>
+      </div>
+      <div class="link-content hidden" id="tab-paste">
+        <div class="paste-instructions">
+          <div class="paste-step">1. ใส่ Character ID แล้วกด <strong>Open JSON</strong></div>
+          <div class="link-row" style="margin: 4px 0">
+            <input id="paste-id-input" type="text" placeholder="Character ID (เช่น 164751480)" />
+            <button id="paste-open-btn" class="paste-open-btn">Open JSON</button>
+          </div>
+          <div class="paste-step">2. Copy JSON ทั้งหมดจากหน้าที่เปิด (Ctrl+A → Ctrl+C)</div>
+          <div class="paste-step">3. กลับมา Paste ลงในช่องด้านล่าง</div>
+        </div>
+        <textarea id="paste-json" placeholder="วาง JSON จาก D&D Beyond ตรงนี้..."></textarea>
+        <div style="display:flex;gap:6px;margin-top:4px;justify-content:center">
+          <button id="paste-apply-btn">Import Character</button>
+        </div>
+        <div id="paste-status"></div>
       </div>
       <div class="link-content hidden" id="tab-monster">
         <textarea id="monster-json" placeholder='{"name":"Goblin","ac":15,"hp":7,"speed":30,"stats":{"str":8,"dex":14,"con":10,"int":10,"wis":8,"cha":8},"actions":[{"name":"Scimitar","damage":"1d6+2","type":"Martial Melee"}]}'></textarea>

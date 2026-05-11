@@ -820,12 +820,76 @@ function renderConditionBadges() {
 // ════════════════════════════════════════
 
 document.querySelectorAll(".link-tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".link-tab").forEach((t) => t.classList.remove("active"));
-    document.querySelectorAll(".link-content").forEach((c) => c.classList.add("hidden"));
-    tab.classList.add("active");
-    document.getElementById(`tab-${tab.dataset.tab}`).classList.remove("hidden");
-  });
+  tab.addEventListener("click", () => switchToTab(tab.dataset.tab));
+});
+
+function switchToTab(tabName) {
+  document.querySelectorAll(".link-tab").forEach((t) => t.classList.remove("active"));
+  document.querySelectorAll(".link-content").forEach((c) => c.classList.add("hidden"));
+  const targetTab = document.querySelector(`.link-tab[data-tab="${tabName}"]`);
+  if (targetTab) targetTab.classList.add("active");
+  const targetContent = document.getElementById(`tab-${tabName}`);
+  if (targetContent) targetContent.classList.remove("hidden");
+}
+
+// ════════════════════════════════════════
+// PASTE JSON IMPORTER (manual D&D Beyond import)
+// ════════════════════════════════════════
+
+document.getElementById("paste-open-btn").addEventListener("click", () => {
+  const input = document.getElementById("paste-id-input");
+  const raw = input.value.trim();
+  const charId = extractCharacterId(raw);
+  if (!charId) {
+    document.getElementById("paste-status").textContent = "ใส่ Character ID ก่อน";
+    document.getElementById("paste-status").className = "error";
+    return;
+  }
+  const url = `https://character-service.dndbeyond.com/character/v5/character/${charId}`;
+  window.open(url, "_blank");
+  document.getElementById("paste-status").textContent = "เปิดหน้า JSON แล้ว — Copy ทั้งหมดแล้ว Paste กลับมาที่นี่";
+  document.getElementById("paste-status").className = "";
+});
+
+document.getElementById("paste-apply-btn").addEventListener("click", async () => {
+  if (!currentTokenId) {
+    document.getElementById("paste-status").textContent = "เลือก token ก่อน";
+    document.getElementById("paste-status").className = "error";
+    return;
+  }
+
+  const jsonText = document.getElementById("paste-json").value.trim();
+  if (!jsonText) {
+    document.getElementById("paste-status").textContent = "วาง JSON ก่อน";
+    document.getElementById("paste-status").className = "error";
+    return;
+  }
+
+  try {
+    const raw = JSON.parse(jsonText);
+    const char = parseCharacter(raw);
+
+    if (!char.name) throw new Error("ไม่พบชื่อตัวละครใน JSON");
+
+    // Extract character ID from the JSON if possible
+    const charId = raw.data?.id || raw.id || "";
+
+    await OBR.scene.items.updateItems([currentTokenId], (items) => {
+      for (const item of items) {
+        item.metadata[METADATA_KEY] = { characterId: String(charId), character: char, lastUpdated: Date.now() };
+      }
+    });
+
+    currentCharData = char;
+    showHotbar(char);
+    linkPanel.classList.add("hidden");
+    document.getElementById("paste-status").textContent = "";
+    await OBR.notification.show(`เชื่อมต่อ "${char.name}" สำเร็จ!`, "SUCCESS");
+    hideError();
+  } catch (err) {
+    document.getElementById("paste-status").textContent = `JSON ไม่ถูกต้อง: ${err.message}`;
+    document.getElementById("paste-status").className = "error";
+  }
 });
 
 // ════════════════════════════════════════
@@ -1863,10 +1927,16 @@ linkBtn.addEventListener("click", async () => {
   try {
     const result = await fetchCharacter(charId);
     if (!result.success) {
-      linkStatus.textContent = result.error;
+      linkStatus.textContent = "ดึงอัตโนมัติไม่ได้ — ใช้ Paste JSON แทน";
       linkStatus.classList.add("error");
-      showError(result.error, result.hint);
-      await OBR.notification.show(result.error, "ERROR");
+      showError(
+        "ดึงข้อมูลอัตโนมัติไม่ได้ (D&D Beyond บล็อก server)",
+        'กดแท็บ "Paste JSON" แล้วทำตามขั้นตอน — ได้ผลเหมือนกัน!'
+      );
+      // Auto-switch to paste tab and pre-fill the ID
+      switchToTab("paste");
+      const pasteIdInput = document.getElementById("paste-id-input");
+      if (pasteIdInput) pasteIdInput.value = charId;
       return;
     }
     const char = result.character;
