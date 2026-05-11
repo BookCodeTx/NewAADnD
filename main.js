@@ -1575,11 +1575,19 @@ async function initDiceBox() {
   if (diceReady || diceInitializing) return;
   diceInitializing = true;
   try {
+    // Determine base URL for assets (works in both dev and production/iframe)
+    const base = import.meta.env.BASE_URL || "/";
+    const assetPath = `${base}dice-assets/assets/`;
+    const origin = `${base}dice-assets/`;
+
+    console.log("[dice] Initializing dice-box with:", { assetPath, origin });
+
     diceBox = new DiceBox("#dice-box", {
-      assetPath: "/dice-assets/assets/",
-      origin: "/dice-assets/",
-      scale: 6,
+      assetPath,
+      origin,
+      scale: 5,
       theme: "default",
+      offscreen: false,       // Force onscreen mode (no Web Worker — works in iframes)
       gravity: 2,
       mass: 1,
       friction: 0.8,
@@ -1590,7 +1598,7 @@ async function initDiceBox() {
     });
     await diceBox.init();
     diceReady = true;
-    console.log("[dice] 3D dice-box initialized in popover");
+    console.log("[dice] 3D dice-box initialized successfully");
   } catch (err) {
     console.warn("[dice] 3D dice init failed, will use text fallback:", err.message);
     diceReady = false;

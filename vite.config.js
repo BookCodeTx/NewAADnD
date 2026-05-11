@@ -31,6 +31,10 @@ export default defineConfig({
           src: "node_modules/@3d-dice/dice-box/dist/world.onscreen.js",
           dest: "dice-assets",
         },
+        {
+          src: "node_modules/@3d-dice/dice-box/dist/world.none.js",
+          dest: "dice-assets",
+        },
       ],
     }),
   ],
