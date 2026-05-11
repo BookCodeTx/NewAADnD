@@ -1872,51 +1872,29 @@ document.querySelectorAll(".hotbar-btn").forEach((btn) => {
 });
 
 // ════════════════════════════════════════
-// CHARACTER FETCHER (multi-strategy with fallbacks)
+// CHARACTER FETCHER
 // ════════════════════════════════════════
-// ลำดับ: 1.Local Express → 2.PROXY_URL → 3.Same-origin API → 4.Paste JSON
-//
-// D&D Beyond บล็อก cloud server IPs (Vercel/AWS/CF Workers) แต่ไม่บล็อก IP บ้าน
-// ดังนั้นลอง localhost (Express server ที่รันบนเครื่องผู้ใช้) ก่อนเสมอ
-
-const LOCAL_PROXY = "http://localhost:3001";
-
-async function tryFetchCharacter(baseUrl, charId) {
-  const res = await fetch(`${baseUrl}/api/character/${charId}`);
-  const data = await res.json();
-  if (res.ok && data.character) return data.character;
-  if (res.status === 404) throw new Error("NOT_FOUND");
-  throw new Error(`HTTP_${res.status}`);
-}
+// D&D Beyond บล็อก cloud IPs → ใช้ Paste JSON เป็นหลัก
+// ถ้า PROXY_URL ตั้งไว้จะลองดึงอัตโนมัติก่อน
 
 async function fetchCharacter(charId) {
-  const strategies = [
-    { name: "Local server (localhost:3001)", url: LOCAL_PROXY },
-  ];
-  if (PROXY_URL && PROXY_URL !== LOCAL_PROXY) {
-    strategies.push({ name: "PROXY_URL", url: PROXY_URL });
-  }
-  strategies.push({ name: "Same-origin API", url: "" });
+  const strategies = [];
+  if (PROXY_URL) strategies.push({ name: "Proxy", url: PROXY_URL });
+  strategies.push({ name: "Same-origin", url: "" });
 
   for (const s of strategies) {
     try {
-      console.log(`[fetch] Trying ${s.name}...`);
-      const char = await tryFetchCharacter(s.url, charId);
-      console.log(`[fetch] ${s.name} succeeded:`, char.name);
-      return { success: true, character: char, source: s.name };
-    } catch (err) {
-      const code = err.message;
-      if (code === "NOT_FOUND") {
-        return { success: false, error: "ไม่พบตัวละคร", hint: "ตรวจสอบ Character ID อีกครั้ง" };
-      }
-      console.warn(`[fetch] ${s.name} failed:`, code);
-    }
+      const res = await fetch(`${s.url}/api/character/${charId}`);
+      const data = await res.json();
+      if (res.ok && data.character) return { success: true, character: data.character };
+      if (res.status === 404) return { success: false, error: "ไม่พบตัวละคร", hint: "ตรวจสอบ Character ID อีกครั้ง" };
+    } catch {}
   }
 
   return {
     success: false,
     error: "ดึงข้อมูลอัตโนมัติไม่ได้",
-    hint: 'เปิด Local Server (cd server && npm run dev) หรือใช้แท็บ "Paste JSON"',
+    hint: 'ใช้แท็บ "Paste JSON" เพื่อ import ตัวละคร',
   };
 }
 
@@ -1938,7 +1916,7 @@ linkBtn.addEventListener("click", async () => {
   try {
     const result = await fetchCharacter(charId);
     if (!result.success) {
-      linkStatus.innerHTML = `${result.error}<br><span style="font-size:9px;color:#e9a045">💡 เปิด Local Server หรือใช้ Paste JSON</span>`;
+      linkStatus.innerHTML = `${result.error}<br><span style="font-size:9px;color:#e9a045">💡 ใช้แท็บ Paste JSON เพื่อ import</span>`;
       linkStatus.classList.add("error");
       showError(
         result.error,

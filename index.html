@@ -388,17 +388,17 @@
     <div id="link-panel">
       <div id="link-status">Select a token to link a character.</div>
       <div class="link-tabs">
-        <div class="link-tab active" data-tab="dndbeyond">D&D Beyond</div>
-        <div class="link-tab" data-tab="paste">Paste JSON</div>
+        <div class="link-tab active" data-tab="paste">Paste JSON</div>
+        <div class="link-tab" data-tab="dndbeyond">D&D Beyond</div>
         <div class="link-tab" data-tab="monster">Monster</div>
       </div>
-      <div class="link-content" id="tab-dndbeyond">
+      <div class="link-content hidden" id="tab-dndbeyond">
         <div class="link-row">
           <input id="link-input" type="text" placeholder="D&D Beyond ID or URL..." />
           <button id="link-btn">Link</button>
         </div>
       </div>
-      <div class="link-content hidden" id="tab-paste">
+      <div class="link-content" id="tab-paste">
         <div class="paste-instructions">
           <div class="paste-step">1. ใส่ Character ID แล้วกด <strong>Open JSON</strong></div>
           <div class="link-row" style="margin: 4px 0">
