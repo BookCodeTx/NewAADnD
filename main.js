@@ -1035,63 +1035,101 @@ function renderInitiative(state) {
   });
 }
 
-// Start Initiative: gather all CHARACTER tokens, show input form for manual entry
+// Initiative: manual add mode — select token, enter value, add to list
 let pendingInitTokens = [];
+let initAddMode = false;
+let initPendingToken = null;
 
-initRollBtn.addEventListener("click", async () => {
-  initRollBtn.disabled = true;
-  initRollBtn.textContent = "Loading...";
+const initInputPanel = document.getElementById("init-input-panel");
+const initInputList = document.getElementById("init-input-list");
+const initAddLabel = document.getElementById("init-add-label");
+const initAddValue = document.getElementById("init-add-value");
+const initAddBtn = document.getElementById("init-add-btn");
+const initConfirmBtn = document.getElementById("init-input-confirm");
 
-  try {
-    const allItems = await OBR.scene.items.getItems((item) =>
-      item.layer === "CHARACTER"
-    );
-
-    pendingInitTokens = allItems.map((item) => {
-      const meta = item.metadata?.[METADATA_KEY];
-      const char = meta?.character;
-      return {
-        tokenId: item.id,
-        name: char?.name || item.name || "Unknown",
-        hpCurrent: char?.hp?.current ?? 0,
-        hpMax: char?.hp?.max ?? 0,
-        ac: char?.ac ?? 10,
-        isMonster: meta?.isMonster || false,
-      };
-    });
-
-    const inputList = document.getElementById("init-input-list");
-    inputList.innerHTML = pendingInitTokens.map((t, i) => `
-      <div class="init-input-row">
-        <input type="number" id="init-val-${i}" placeholder="--" />
-        <span class="init-input-name">${t.name}</span>
-      </div>
-    `).join("");
-
-    initiativeBar.classList.add("visible");
-    initTrack.innerHTML = "";
-    document.getElementById("init-input-panel").classList.add("visible");
-
-    const firstInput = document.getElementById("init-val-0");
-    if (firstInput) firstInput.focus();
-  } catch (err) {
-    console.error("Initiative setup failed:", err);
-    await OBR.notification.show("Initiative setup failed.", "ERROR");
-  } finally {
-    initRollBtn.disabled = false;
-    initRollBtn.textContent = "Start Initiative";
-  }
+initRollBtn.addEventListener("click", () => {
+  pendingInitTokens = [];
+  initAddMode = true;
+  initPendingToken = null;
+  initTrack.innerHTML = "";
+  initInputList.innerHTML = "";
+  initInputPanel.classList.add("visible");
+  initRollBtn.classList.add("hidden");
+  initAddLabel.textContent = "Select a token on the board...";
+  initAddValue.classList.add("hidden");
+  initAddBtn.classList.add("hidden");
+  initConfirmBtn.classList.add("hidden");
 });
 
-document.getElementById("init-input-confirm").addEventListener("click", async () => {
-  const entries = pendingInitTokens.map((t, i) => {
-    const input = document.getElementById(`init-val-${i}`);
-    const val = parseInt(input?.value) || 0;
-    return { ...t, initiative: val };
+function onInitTokenSelected(item) {
+  if (!initAddMode) return;
+  const meta = item.metadata?.[METADATA_KEY];
+  const char = meta?.character;
+  initPendingToken = {
+    tokenId: item.id,
+    name: char?.name || item.name || "Unknown",
+    hpCurrent: char?.hp?.current ?? 0,
+    hpMax: char?.hp?.max ?? 0,
+    ac: char?.ac ?? 10,
+    isMonster: meta?.isMonster || false,
+  };
+  initAddLabel.textContent = initPendingToken.name;
+  initAddValue.classList.remove("hidden");
+  initAddBtn.classList.remove("hidden");
+  initAddValue.value = "";
+  initAddValue.focus();
+}
+
+initAddBtn.addEventListener("click", addInitToken);
+initAddValue.addEventListener("keydown", (e) => { if (e.key === "Enter") addInitToken(); });
+
+function addInitToken() {
+  if (!initPendingToken) return;
+  const val = parseInt(initAddValue.value) || 0;
+  if (pendingInitTokens.some((t) => t.tokenId === initPendingToken.tokenId)) {
+    const existing = pendingInitTokens.find((t) => t.tokenId === initPendingToken.tokenId);
+    existing.initiative = val;
+  } else {
+    pendingInitTokens.push({ ...initPendingToken, initiative: val });
+  }
+  initPendingToken = null;
+  renderInitInputList();
+  initAddLabel.textContent = "Select next token...";
+  initAddValue.classList.add("hidden");
+  initAddBtn.classList.add("hidden");
+  initConfirmBtn.classList.remove("hidden");
+}
+
+function renderInitInputList() {
+  initInputList.innerHTML = pendingInitTokens.map((t, i) => `
+    <div class="init-added-row">
+      <span class="init-added-val">${t.initiative}</span>
+      <span class="init-added-name">${t.name}</span>
+      <button class="init-remove-btn" data-idx="${i}">✕</button>
+    </div>
+  `).join("");
+  initInputList.querySelectorAll(".init-remove-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      pendingInitTokens.splice(parseInt(btn.dataset.idx), 1);
+      renderInitInputList();
+      if (pendingInitTokens.length === 0) initConfirmBtn.classList.add("hidden");
+    });
   });
+}
 
-  entries.sort((a, b) => b.initiative - a.initiative);
+document.getElementById("init-input-cancel").addEventListener("click", () => {
+  initAddMode = false;
+  initPendingToken = null;
+  pendingInitTokens = [];
+  initInputPanel.classList.remove("visible");
+  initRollBtn.classList.remove("hidden");
+});
 
+initConfirmBtn.addEventListener("click", async () => {
+  if (pendingInitTokens.length === 0) return;
+  initAddMode = false;
+
+  const entries = [...pendingInitTokens].sort((a, b) => b.initiative - a.initiative);
   const state = { order: entries, currentIndex: 0, round: 1 };
   await setInitiativeState(state);
 
@@ -1101,10 +1139,7 @@ document.getElementById("init-input-confirm").addEventListener("click", async ()
   logCombat(`Initiative set! ${logLines}`, "init");
 
   await OBR.notification.show(`Initiative set for ${entries.length} combatants!`, "SUCCESS");
-
-  if (entries.length > 0) {
-    await OBR.player.select([entries[0].tokenId]);
-  }
+  if (entries.length > 0) await OBR.player.select([entries[0].tokenId]);
 });
 
 // Next Turn
@@ -1210,6 +1245,12 @@ async function handleSelectionChange() {
     const target = items.find((i) => i.layer === "CHARACTER" && i.id !== attackerTokenId);
     if (target) await pickTarget(target);
     return;
+  }
+
+  if (initAddMode && selection?.length > 0) {
+    const items = await OBR.scene.items.getItems(selection);
+    const token = items.find((i) => i.layer === "CHARACTER");
+    if (token) onInitTokenSelected(token);
   }
 
   if (!selection || selection.length === 0) { hideAll(); return; }
