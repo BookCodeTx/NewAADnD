@@ -10,7 +10,8 @@ const WEAPON_TYPES = [
 ];
 
 export function parseCharacter(raw) {
-  const d = raw.data;
+  // Support both v5 (raw.data) and SCDS v1 (raw.data or raw directly)
+  const d = raw.data || raw;
 
   const stats = parseStats(d);
   const hp = parseHP(d, getConMod(stats));

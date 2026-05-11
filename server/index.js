@@ -8,6 +8,20 @@ const PORT = 3001;
 app.use(cors());
 app.use(express.json());
 
+const DNDB_URLS = [
+  (id) => `https://character-service-scds.dndbeyond.com/v1/character/${id}`,
+  (id) => `https://character-service.dndbeyond.com/character/v5/character/${id}`,
+];
+
+const BROWSER_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  Accept: "application/json, text/plain, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+  Origin: "https://www.dndbeyond.com",
+  Referer: "https://www.dndbeyond.com/",
+};
+
 app.get("/api/character/:id", async (req, res) => {
   const { id } = req.params;
 
@@ -15,48 +29,48 @@ app.get("/api/character/:id", async (req, res) => {
     return res.status(400).json({ error: "Invalid character ID" });
   }
 
-  const url = `https://character-service.dndbeyond.com/character/v5/character/${id}`;
+  let lastError = null;
 
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        Accept: "application/json",
-      },
-    });
+  for (const urlFn of DNDB_URLS) {
+    const url = urlFn(id);
+    try {
+      const response = await fetch(url, { headers: BROWSER_HEADERS });
 
-    if (!response.ok) {
-      const errorMap = {
-        403: {
-          error: "ดึงข้อมูลไม่ได้ — ตัวละครนี้ไม่ได้เปิด Public",
-          hint: "กรุณาไปที่ D&D Beyond > Character Settings > เปิด \"Public\" แล้วลองใหม่อีกครั้ง",
-          code: "NOT_PUBLIC",
-        },
-        404: {
-          error: "ไม่พบตัวละคร",
-          hint: "ตรวจสอบ Character ID หรือ URL อีกครั้ง",
-          code: "NOT_FOUND",
-        },
-      };
+      if (response.ok) {
+        const raw = await response.json();
+        const parsed = parseCharacter(raw);
+        return res.json({ success: true, character: parsed });
+      }
 
-      const mapped = errorMap[response.status] || {
-        error: `D&D Beyond returned ${response.status}`,
-        hint: "ลองใหม่อีกครั้งในภายหลัง",
-        code: "UNKNOWN",
-      };
-
-      return res.status(response.status).json(mapped);
+      lastError = { status: response.status, url };
+      console.warn(`[proxy] ${url} returned ${response.status}, trying next...`);
+    } catch (err) {
+      lastError = { status: 500, message: err.message, url };
+      console.warn(`[proxy] ${url} threw: ${err.message}, trying next...`);
     }
-
-    const raw = await response.json();
-    const parsed = parseCharacter(raw);
-
-    res.json({ success: true, character: parsed });
-  } catch (err) {
-    console.error("Proxy error:", err.message);
-    res.status(500).json({ error: "Failed to fetch character data" });
   }
+
+  const status = lastError?.status || 500;
+  const errorMap = {
+    403: {
+      error: "ดึงข้อมูลไม่ได้ — ตัวละครนี้ไม่ได้เปิด Public",
+      hint: 'กรุณาไปที่ D&D Beyond → Character Settings → เปิด "Public" แล้วลองใหม่',
+      code: "NOT_PUBLIC",
+    },
+    404: {
+      error: "ไม่พบตัวละคร",
+      hint: "ตรวจสอบ Character ID หรือ URL อีกครั้ง",
+      code: "NOT_FOUND",
+    },
+  };
+
+  const mapped = errorMap[status] || {
+    error: `D&D Beyond ไม่ตอบกลับ (${status})`,
+    hint: "ลองใหม่อีกครั้ง หรือตรวจสอบว่าตัวละครเป็น Public",
+    code: "UNKNOWN",
+  };
+
+  return res.status(status).json(mapped);
 });
 
 app.get("/health", (_req, res) => {
