@@ -2,6 +2,7 @@ import OBR from "@owlbear-rodeo/sdk";
 import { SPELLS, getSpellcastingDC, getSaveMod, tokensInRadius, rollSave, parseDamageNotation, DPI_PER_FOOT } from "./spells.js";
 import { CONDITIONS, getConditionPenalty, shouldAutoFailSave } from "./conditions.js";
 import { playSfx } from "./sfx.js";
+import { playHitEffect, playCritEffect, playMissEffect, playHealEffect, playSpellEffect, screenShake, getDiceColor } from "./effects.js";
 
 const METADATA_KEY = "com.dnd-hotbar/character";
 const INIT_METADATA_KEY = "com.dnd-hotbar/initiative";
@@ -486,8 +487,9 @@ async function castAoeSpell(centerToken) {
   await syncInitiativeHP();
   showAoeResults(spell, dc, results);
 
-  // SFX + floating damage for all targets
+  // SFX + visual effects + floating damage for all targets
   await broadcastSfx("spell");
+  playSpellEffect(spell.damageType);
   setTimeout(async () => {
     await broadcastSfx("damage");
     for (const r of results) {
@@ -639,11 +641,13 @@ async function applyHpChange(newCurrent, newMax = null, newTemp = null, label = 
   refreshHpEditor();
   await syncInitiativeHP();
 
-  // Show floating damage/heal if HP changed
+  // Show floating damage/heal if HP changed + visual effects
   const delta = finalCurrent - oldCurrent;
   if (delta !== 0) {
     const isHeal = delta > 0;
     await broadcastSfx(isHeal ? "heal" : "damage");
+    if (isHeal) playHealEffect();
+    else { playHitEffect("bludgeoning"); screenShake("light"); }
     await showFloatingDamage(currentTokenId, Math.abs(delta), null, { isHeal });
   }
 
@@ -1287,8 +1291,9 @@ async function castSingleTargetSaveSpell(targetToken) {
   const dmgLabel = saved ? `${dmg} (half)` : `${dmg} (full)`;
   logCombat(`<strong class="damage">${dmgLabel} ${spell.damageType}</strong> to <strong>${name}</strong>`, "spell");
 
-  // SFX + floating damage
+  // SFX + visual effects + floating damage
   await broadcastSfx("spell");
+  playSpellEffect(spell.damageType);
   if (dmg > 0) {
     setTimeout(async () => {
       await broadcastSfx("damage");
@@ -1321,6 +1326,7 @@ async function resolveAttackRoll(result) {
   } else if (isNat1) {
     logCombat(`Attack Roll: <strong class="miss">${finalTotal}</strong> — <strong class="miss">CRITICAL MISS!</strong>`, "miss");
     showCombatOverlay(`CRITICAL MISS!`, `${attackerData.name} whiffs completely.`);
+    playMissEffect();
     await broadcastSfx("miss");
     await OBR.notification.show(`${attackerData.name} critically missed ${targetName}!`, "ERROR");
     setTimeout(() => resetCombat(), 2000);
@@ -1331,6 +1337,7 @@ async function resolveAttackRoll(result) {
   } else {
     logCombat(`Attack Roll: <strong class="miss">${finalTotal}</strong> vs AC ${targetAC} — <strong class="miss">MISS</strong>`, "miss");
     showCombatOverlay(`MISS! (${finalTotal} vs AC ${targetAC})`, `${attackerData.name}'s attack fails to connect.`);
+    playMissEffect();
     await broadcastSfx("miss");
     await OBR.notification.show(`${attackerData.name} missed ${targetName} (${finalTotal} vs AC ${targetAC})`, "WARNING");
     setTimeout(() => resetCombat(), 2000);
@@ -1420,12 +1427,19 @@ async function resolveDamage(result) {
     isDown ? `${targetName} falls to 0 HP!` : `${targetName}: ${newCurrent}/${targetData.hp.max} HP remaining`
   );
 
-  // SFX + floating damage
+  // SFX + visual effects + floating damage
   const isCrit = attackRollResult?.natValue === 20;
+  const weapon = selectedWeapon || attackerData.weapons?.find((w) => w.equipped) || attackerData.weapons?.[0];
+  const dmgType = combatAction === "spell" ? "Force" : (weapon?.damageType || "Slashing");
   await broadcastSfx(isCrit ? "crit" : "attack-hit");
+  if (isCrit) {
+    playCritEffect(dmgType);
+  } else {
+    playHitEffect(dmgType);
+  }
   setTimeout(async () => {
     await broadcastSfx("damage");
-    await showFloatingDamage(targetTokenId, damage, null, { isCrit });
+    await showFloatingDamage(targetTokenId, damage, dmgType, { isCrit });
   }, 400);
 
   setTimeout(() => resetCombat(), 3200);
