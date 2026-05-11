@@ -9,9 +9,9 @@
     body { background: #0d0d1a; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; overflow-x: hidden; overflow-y: auto; user-select: none; padding: 0; }
 
     /* ═══ INITIATIVE BAR ═══ */
-    #initiative-bar { position: sticky; top: 0; z-index: 100; width: 100%; background: linear-gradient(180deg, #0d0d1a, #111128); border-bottom: 2px solid #0f3460; padding: 4px 6px; display: none; flex-direction: column; gap: 4px; }
+    #initiative-bar { position: sticky; top: 0; z-index: 100; width: 100%; background: linear-gradient(180deg, #1a1a2e, #111128); border-bottom: 2px solid #0f3460; padding: 6px; display: none; flex-direction: column; gap: 4px; }
     #initiative-bar.visible { display: flex; }
-    .init-header { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
+    .init-header { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 4px; }
     .init-title { color: #e9a045; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
     .init-round { color: #8899aa; font-size: 10px; }
     .init-controls { display: flex; gap: 4px; }
@@ -21,19 +21,36 @@
     .init-ctrl-btn.primary:hover { background: #d4902a; }
     .init-ctrl-btn.danger { color: #e94560; border-color: #e94560; }
     .init-ctrl-btn.danger:hover { background: #e9456022; }
-    .init-track { display: flex; gap: 4px; overflow-x: auto; padding: 2px 0; scrollbar-width: thin; scrollbar-color: #333 transparent; }
-    .init-token { display: flex; flex-direction: column; align-items: center; min-width: 52px; padding: 3px 4px; border: 2px solid #1a2a4e; border-radius: 6px; background: #0f1828; cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
-    .init-token:hover { border-color: #e9a045; }
-    .init-token.active { border-color: #e9a045; background: linear-gradient(180deg, #2a1a00, #1a1200); box-shadow: 0 0 10px rgba(233,160,69,0.4); }
-    .init-token.dead { opacity: 0.4; }
-    .init-token .init-roll { font-size: 14px; font-weight: 800; color: #e9a045; }
-    .init-token .init-name { font-size: 7px; color: #8899aa; max-width: 48px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
-    .init-token.active .init-name { color: #e9a045; }
-    .init-token .init-hp { font-size: 7px; color: #45e9a0; }
-    .init-token .init-hp.hurt { color: #e9a045; }
-    .init-token .init-hp.critical { color: #e94560; }
-    .init-token .init-hp.down { color: #666; }
-    .init-token .init-badge { font-size: 7px; padding: 0 3px; border-radius: 2px; background: #e9456033; color: #e94560; margin-top: 1px; }
+    .init-track { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #333 transparent; }
+    .init-row { display: flex; align-items: center; gap: 0; padding: 3px 0; border-radius: 5px; background: #16213e; cursor: pointer; transition: all 0.15s; }
+    .init-row:hover { background: #1a2a4e; }
+    .init-row.active { background: linear-gradient(90deg, #2a1a00, #1e1400); box-shadow: 0 0 8px rgba(233,160,69,0.3); }
+    .init-row.active .init-roll-val { color: #ffd700; }
+    .init-row.active .init-name { color: #e9a045; font-weight: 700; }
+    .init-row.dead { opacity: 0.4; }
+    .init-roll-val { width: 32px; text-align: center; font-size: 14px; font-weight: 800; color: #c0c8d4; flex-shrink: 0; }
+    .init-name { flex: 1; font-size: 11px; color: #c0c8d4; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .init-hp-cell { display: flex; align-items: center; gap: 0; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+    .init-hp-cur { color: #45e9a0; min-width: 22px; text-align: right; }
+    .init-hp-sep { color: #555; margin: 0 1px; }
+    .init-hp-max { color: #45e9a0; min-width: 22px; text-align: left; }
+    .init-hp-cell.hurt .init-hp-cur { color: #e9a045; }
+    .init-hp-cell.critical .init-hp-cur { color: #e94560; }
+    .init-hp-cell.down .init-hp-cur, .init-hp-cell.down .init-hp-max { color: #666; }
+    .init-ac { width: 28px; text-align: center; font-size: 11px; font-weight: 700; color: #8899aa; flex-shrink: 0; }
+    .init-actions { display: flex; gap: 2px; padding: 0 4px; flex-shrink: 0; }
+    .init-action-btn { background: none; border: 1px solid #333; border-radius: 3px; color: #8899aa; font-size: 10px; padding: 1px 4px; cursor: pointer; transition: all 0.15s; }
+    .init-action-btn:hover { border-color: #e9a045; color: #e9a045; }
+    /* Initiative input mode */
+    #init-input-panel { display: none; padding: 6px; background: #0d0d1a; border: 1px solid #0f3460; border-radius: 6px; }
+    #init-input-panel.visible { display: block; }
+    .init-input-list { display: flex; flex-direction: column; gap: 3px; max-height: 240px; overflow-y: auto; }
+    .init-input-row { display: flex; align-items: center; gap: 6px; }
+    .init-input-row .init-input-name { flex: 1; font-size: 11px; color: #c0c8d4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .init-input-row input { width: 50px; padding: 3px 6px; border: 1px solid #0f3460; border-radius: 4px; background: #16213e; color: #fff; font-size: 13px; font-weight: 700; text-align: center; }
+    .init-input-row input:focus { outline: none; border-color: #e9a045; }
+    #init-input-confirm { width: 100%; margin-top: 6px; padding: 5px; border: none; border-radius: 4px; background: #e9a045; color: #0d0d1a; font-size: 11px; font-weight: 700; cursor: pointer; }
+    #init-input-confirm:hover { background: #d4902a; }
     .init-token .init-badge.monster { background: #a045e933; color: #a045e9; }
     .init-token .init-conditions { display: flex; gap: 1px; margin-top: 1px; }
     .init-token .cond-dot { font-size: 6px; }
@@ -334,12 +351,16 @@
       <span class="init-title">Initiative</span>
       <span class="init-round" id="init-round">Round 1</span>
       <div class="init-controls">
-        <button class="init-ctrl-btn" id="init-roll-btn">Roll Initiative</button>
+        <button class="init-ctrl-btn" id="init-roll-btn">Start Initiative</button>
         <button class="init-ctrl-btn primary" id="init-next-btn">Next Turn</button>
         <button class="init-ctrl-btn danger" id="init-end-btn">End Combat</button>
       </div>
     </div>
     <div class="init-track" id="init-track"></div>
+    <div id="init-input-panel">
+      <div class="init-input-list" id="init-input-list"></div>
+      <button id="init-input-confirm">Confirm Initiative</button>
+    </div>
   </div>
 
   <div id="main-content">

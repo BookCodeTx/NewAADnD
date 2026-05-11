@@ -1000,6 +1000,7 @@ function renderInitiative(state) {
 
   initiativeBar.classList.add("visible");
   initRoundEl.textContent = `Round ${state.round || 1}`;
+  document.getElementById("init-input-panel").classList.remove("visible");
 
   initTrack.innerHTML = state.order.map((entry, i) => {
     const isActive = i === state.currentIndex;
@@ -1011,18 +1012,24 @@ function renderInitiative(state) {
     else if (hpPct <= 50) hpClass = "hurt";
 
     return `
-      <div class="init-token ${isActive ? "active" : ""} ${isDown ? "dead" : ""}"
-           data-token-id="${entry.tokenId}" title="${entry.name}">
-        <span class="init-roll">${entry.initiative}</span>
+      <div class="init-row ${isActive ? "active" : ""} ${isDown ? "dead" : ""}"
+           data-token-id="${entry.tokenId}">
+        <span class="init-roll-val">${entry.initiative}</span>
         <span class="init-name">${entry.name}</span>
-        <span class="init-hp ${hpClass}">${entry.hpCurrent}/${entry.hpMax}</span>
-        ${entry.isMonster ? '<span class="init-badge monster">MON</span>' : ""}
+        <div class="init-hp-cell ${hpClass}">
+          <span class="init-hp-cur">${entry.hpCurrent}</span>
+          <span class="init-hp-sep">/</span>
+          <span class="init-hp-max">${entry.hpMax}</span>
+        </div>
+        <span class="init-ac">${entry.ac ?? "?"}</span>
+        <div class="init-actions">
+          <button class="init-action-btn" data-action="select" title="Select">&#9654;</button>
+        </div>
       </div>
     `;
   }).join("");
 
-  // Click to select token on the board
-  initTrack.querySelectorAll(".init-token").forEach((el) => {
+  initTrack.querySelectorAll(".init-row").forEach((el) => {
     el.addEventListener("click", () => {
       const tokenId = el.dataset.tokenId;
       if (tokenId) OBR.player.select([tokenId]);
@@ -1030,66 +1037,75 @@ function renderInitiative(state) {
   });
 }
 
-// Roll Initiative: gather all CHARACTER tokens, roll 1d20 + DEX mod
+// Start Initiative: gather all CHARACTER tokens, show input form for manual entry
+let pendingInitTokens = [];
+
 initRollBtn.addEventListener("click", async () => {
   initRollBtn.disabled = true;
-  initRollBtn.textContent = "Rolling...";
+  initRollBtn.textContent = "Loading...";
 
   try {
     const allItems = await OBR.scene.items.getItems((item) =>
       item.layer === "CHARACTER"
     );
 
-    const entries = [];
-
-    for (const item of allItems) {
+    pendingInitTokens = allItems.map((item) => {
       const meta = item.metadata?.[METADATA_KEY];
       const char = meta?.character;
-
-      const dexMod = char?.stats?.find((s) => s.name === "DEX")?.modifier ?? 0;
-      const roll = Math.floor(Math.random() * 20) + 1;
-      const initiative = roll + dexMod;
-
-      entries.push({
+      return {
         tokenId: item.id,
         name: char?.name || item.name || "Unknown",
-        initiative,
-        roll,
-        dexMod,
         hpCurrent: char?.hp?.current ?? 0,
         hpMax: char?.hp?.max ?? 0,
         ac: char?.ac ?? 10,
         isMonster: meta?.isMonster || false,
-      });
-    }
+      };
+    });
 
-    entries.sort((a, b) => b.initiative - a.initiative);
+    const inputList = document.getElementById("init-input-list");
+    inputList.innerHTML = pendingInitTokens.map((t, i) => `
+      <div class="init-input-row">
+        <input type="number" id="init-val-${i}" placeholder="--" />
+        <span class="init-input-name">${t.name}</span>
+      </div>
+    `).join("");
 
-    const state = {
-      order: entries,
-      currentIndex: 0,
-      round: 1,
-    };
+    initiativeBar.classList.add("visible");
+    initTrack.innerHTML = "";
+    document.getElementById("init-input-panel").classList.add("visible");
 
-    await setInitiativeState(state);
-
-    const logLines = entries.map(
-      (e) => `<strong>${e.name}</strong>: ${e.roll} + ${e.dexMod} = <strong>${e.initiative}</strong>`
-    ).join(" | ");
-    logCombat(`Initiative rolled! ${logLines}`, "init");
-
-    await OBR.notification.show(`Initiative rolled for ${entries.length} combatants!`, "SUCCESS");
-
-    // Select the first token
-    if (entries.length > 0) {
-      await OBR.player.select([entries[0].tokenId]);
-    }
+    const firstInput = document.getElementById("init-val-0");
+    if (firstInput) firstInput.focus();
   } catch (err) {
-    console.error("Initiative roll failed:", err);
-    await OBR.notification.show("Initiative roll failed.", "ERROR");
+    console.error("Initiative setup failed:", err);
+    await OBR.notification.show("Initiative setup failed.", "ERROR");
   } finally {
     initRollBtn.disabled = false;
-    initRollBtn.textContent = "Roll Initiative";
+    initRollBtn.textContent = "Start Initiative";
+  }
+});
+
+document.getElementById("init-input-confirm").addEventListener("click", async () => {
+  const entries = pendingInitTokens.map((t, i) => {
+    const input = document.getElementById(`init-val-${i}`);
+    const val = parseInt(input?.value) || 0;
+    return { ...t, initiative: val };
+  });
+
+  entries.sort((a, b) => b.initiative - a.initiative);
+
+  const state = { order: entries, currentIndex: 0, round: 1 };
+  await setInitiativeState(state);
+
+  const logLines = entries.map(
+    (e) => `<strong>${e.name}</strong>: <strong>${e.initiative}</strong>`
+  ).join(" | ");
+  logCombat(`Initiative set! ${logLines}`, "init");
+
+  await OBR.notification.show(`Initiative set for ${entries.length} combatants!`, "SUCCESS");
+
+  if (entries.length > 0) {
+    await OBR.player.select([entries[0].tokenId]);
   }
 });
 
