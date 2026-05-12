@@ -533,6 +533,157 @@ async function ensureFloaterModal() {
   }
 }
 
+// ════════════════════════════════════════
+// TOKEN EFFECTS — animate tokens on the OBR board
+// ════════════════════════════════════════
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function shakeToken(tokenId, { intensity = 10, steps = 8, duration = 400 } = {}) {
+  try {
+    const items = await OBR.scene.items.getItems([tokenId]);
+    if (!items[0]) return;
+    const orig = { x: items[0].position.x, y: items[0].position.y };
+    const stepDur = duration / steps;
+
+    for (let i = 0; i < steps; i++) {
+      const factor = 1 - i / steps; // decay over time
+      const dx = (Math.random() - 0.5) * intensity * 2 * factor;
+      const dy = (Math.random() - 0.5) * intensity * 2 * factor;
+      await OBR.scene.items.updateItems([tokenId], (items) => {
+        items[0].position = { x: orig.x + dx, y: orig.y + dy };
+      });
+      await sleep(stepDur);
+    }
+
+    // Restore original position
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      items[0].position = orig;
+    });
+  } catch (err) {
+    console.warn("shakeToken error:", err);
+  }
+}
+
+async function pulseToken(tokenId, { scaleFactor = 1.25, duration = 300 } = {}) {
+  try {
+    const items = await OBR.scene.items.getItems([tokenId]);
+    if (!items[0]) return;
+    const origScale = { x: items[0].scale.x, y: items[0].scale.y };
+
+    // Scale up
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      items[0].scale = { x: origScale.x * scaleFactor, y: origScale.y * scaleFactor };
+    });
+    await sleep(duration / 2);
+
+    // Scale back
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      items[0].scale = origScale;
+    });
+  } catch (err) {
+    console.warn("pulseToken error:", err);
+  }
+}
+
+async function dodgeToken(tokenId, { distance = 25, duration = 250 } = {}) {
+  try {
+    const items = await OBR.scene.items.getItems([tokenId]);
+    if (!items[0]) return;
+    const orig = { x: items[0].position.x, y: items[0].position.y };
+
+    // Pick a random dodge direction
+    const angle = Math.random() * Math.PI * 2;
+    const dx = Math.cos(angle) * distance;
+    const dy = Math.sin(angle) * distance;
+
+    // Dodge out
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      items[0].position = { x: orig.x + dx, y: orig.y + dy };
+    });
+    await sleep(duration * 0.6);
+
+    // Return to original
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      items[0].position = orig;
+    });
+  } catch (err) {
+    console.warn("dodgeToken error:", err);
+  }
+}
+
+async function spinToken(tokenId, { degrees = 15, duration = 300 } = {}) {
+  try {
+    const items = await OBR.scene.items.getItems([tokenId]);
+    if (!items[0]) return;
+    const origRot = items[0].rotation;
+
+    // Spin one way
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      items[0].rotation = origRot + degrees;
+    });
+    await sleep(duration * 0.25);
+
+    // Spin other way
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      items[0].rotation = origRot - degrees;
+    });
+    await sleep(duration * 0.25);
+
+    // Back to center
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      items[0].rotation = origRot;
+    });
+  } catch (err) {
+    console.warn("spinToken error:", err);
+  }
+}
+
+// Combined effect sequences
+async function tokenHitEffect(tokenId) {
+  // Shake + pulse simultaneously
+  await Promise.all([
+    shakeToken(tokenId, { intensity: 12, steps: 6, duration: 350 }),
+    pulseToken(tokenId, { scaleFactor: 1.15, duration: 300 }),
+  ]);
+}
+
+async function tokenCritEffect(tokenId) {
+  // Big shake + big pulse + spin — dramatic!
+  await Promise.all([
+    shakeToken(tokenId, { intensity: 20, steps: 10, duration: 600 }),
+    pulseToken(tokenId, { scaleFactor: 1.35, duration: 400 }),
+    spinToken(tokenId, { degrees: 20, duration: 500 }),
+  ]);
+}
+
+async function tokenMissEffect(tokenId) {
+  // Quick dodge to the side and back
+  await dodgeToken(tokenId, { distance: 30, duration: 300 });
+}
+
+async function tokenDownEffect(tokenId) {
+  // Token "collapses" — shrink + drop down
+  try {
+    const items = await OBR.scene.items.getItems([tokenId]);
+    if (!items[0]) return;
+    const origScale = { x: items[0].scale.x, y: items[0].scale.y };
+
+    // Shrink dramatically
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      items[0].scale = { x: origScale.x * 0.6, y: origScale.y * 0.6 };
+    });
+    await sleep(400);
+
+    // Restore (the token is "down" but still on the board)
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      items[0].scale = origScale;
+    });
+  } catch (err) {
+    console.warn("tokenDownEffect error:", err);
+  }
+}
+
 async function showFloatingDamage(tokenId, damage, damageType, options = {}) {
   try {
     const items = await OBR.scene.items.getItems([tokenId]);
@@ -1364,6 +1515,8 @@ async function resolveAttackRoll(result) {
     showCombatOverlay(`MISS!`, `${attackerData.name}'s attack misses.`);
     playMissEffect();
     await broadcastSfx("miss");
+    // Token dodge effect on the target
+    if (targetTokenId) tokenMissEffect(targetTokenId);
     await OBR.notification.show(`${attackerData.name} missed ${targetName}!`, "WARNING");
     setTimeout(() => resetCombat(), 2000);
     return;
@@ -1441,9 +1594,21 @@ async function resolveDamage(result) {
   await broadcastSfx(isCrit ? "crit" : "attack-hit");
   if (isCrit) playCritEffect("Slashing");
   else playHitEffect("Slashing");
+
+  // Token effects on the board!
+  if (targetTokenId) {
+    if (isCrit) {
+      tokenCritEffect(targetTokenId);
+    } else {
+      tokenHitEffect(targetTokenId);
+    }
+  }
+
   setTimeout(async () => {
     await broadcastSfx("damage");
     await showFloatingDamage(targetTokenId, damage, "Slashing", { isCrit });
+    // If target is down, play collapse effect
+    if (isDown && targetTokenId) tokenDownEffect(targetTokenId);
   }, 400);
 
   setTimeout(() => resetCombat(), 3200);
