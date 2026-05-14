@@ -1884,7 +1884,10 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
     showDiceResultDisplay(label, result);
   }
 
-  // Broadcast SFX + notification to all players
+  // Dramatic pause — wait for dice animation to finish before showing notification
+  await new Promise((r) => setTimeout(r, used3D ? 1500 : 2600));
+
+  // Broadcast SFX + notification AFTER dice finishes rolling
   const sfxName = natValue === 20 ? "crit" : natValue === 1 ? "miss" : "dice-hit";
   OBR.broadcast.sendMessage(SFX_CHANNEL, { sound: sfxName }).catch(() => {});
 
@@ -1894,8 +1897,8 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
     : `Rolled ${notation}${modStr}: ${finalTotal}`;
   OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
 
-  // Dramatic pause (longer for fallback: 2.2s roll + 0.3s transition + 2.5s result)
-  await new Promise((r) => setTimeout(r, used3D ? 1500 : 5100));
+  // Wait for result display to finish
+  await new Promise((r) => setTimeout(r, used3D ? 0 : 2500));
 
 
   // Auto-hide 3D overlay
