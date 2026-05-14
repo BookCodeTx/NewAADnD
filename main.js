@@ -1907,7 +1907,7 @@ function showDiceResultDisplay(label, result) {
       clearTimeout(diceResultEl._hideTimer);
       diceResultEl._hideTimer = setTimeout(() => {
         diceResultEl.className = "";
-      }, 2500);
+      }, 3000);
     }, 300);
   });
 }
@@ -2009,7 +2009,7 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
   OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
 
   // Wait for result display to finish
-  await new Promise((r) => setTimeout(r, used3D ? 0 : 2500));
+  await new Promise((r) => setTimeout(r, used3D ? 0 : 3000));
 
 
   // Auto-hide 3D overlay
