@@ -177,6 +177,7 @@ function resetCombat() {
   hideBonusPicker();
   hideAttackInput();
   hideDamageInput();
+  hideDamageRollPanel();
   hideAoeResults();
   document.querySelectorAll(".hotbar-btn").forEach((b) => b.classList.remove("active-action"));
 }
@@ -1833,15 +1834,59 @@ async function resolveAttackRoll(result) {
   attackRollResult = { natValue };
   combatState = COMBAT.ROLLING_DAMAGE;
 
-  // Auto-roll damage if weapon is selected
-  if (selectedWeapon && selectedWeapon.damage) {
-    await rollDamageDice(isCrit, targetName);
-  } else {
-    // Fallback to manual input if no weapon data
-    const hitLabel = isCrit ? `CRIT! Enter damage → ${targetName}` : `HIT! Enter damage → ${targetName}`;
-    showDamageInput(hitLabel);
-  }
+  // Show damage roll panel for player to roll
+  const hitLabel = isCrit ? `CRIT! → ${targetName}` : `HIT! → ${targetName}`;
+  showDamageRollPanel(hitLabel, isCrit);
 }
+
+// ── Damage Roll Panel (player clicks to roll) ──
+const damageRollPanel = document.getElementById("damage-roll-panel");
+const damageRollTitle = document.getElementById("damage-roll-title");
+const damageRollInfo = document.getElementById("damage-roll-info");
+const damageRollBtn = document.getElementById("damage-roll-btn");
+let pendingDamageCrit = false;
+
+function showDamageRollPanel(title, isCrit) {
+  pendingDamageCrit = isCrit;
+  damageRollTitle.textContent = title || "Roll Damage";
+
+  if (selectedWeapon && selectedWeapon.damage) {
+    const baseDice = selectedWeapon.damage;
+    const mod = selectedWeapon.damageMod || 0;
+    const modStr = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : "";
+    const dmgType = selectedWeapon.damageType || "";
+    let notation = baseDice;
+    if (isCrit) {
+      notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
+    }
+    damageRollInfo.textContent = `${selectedWeapon.name}: ${notation}${modStr} ${dmgType}${isCrit ? " (CRIT x2 dice)" : ""}`;
+    damageRollBtn.textContent = `🎲 Roll ${notation}${modStr}`;
+  } else {
+    damageRollInfo.textContent = "";
+    damageRollBtn.textContent = "🎲 Roll Damage";
+  }
+
+  damageRollPanel.classList.add("visible");
+}
+
+function hideDamageRollPanel() { damageRollPanel.classList.remove("visible"); }
+
+damageRollBtn.addEventListener("click", async () => {
+  if (!selectedWeapon || !selectedWeapon.damage) {
+    // Fallback to manual if no weapon data
+    hideDamageRollPanel();
+    showDamageInput("Enter Damage");
+    return;
+  }
+  hideDamageRollPanel();
+  const targetName = targetData?.name || "Target";
+  await rollDamageDice(pendingDamageCrit, targetName);
+});
+
+document.getElementById("damage-roll-cancel").addEventListener("click", () => {
+  hideDamageRollPanel();
+  resetCombat();
+});
 
 async function rollDamageDice(isCrit, targetName) {
   const weapon = selectedWeapon;
@@ -2285,7 +2330,7 @@ function showHotbar(char) {
 
 function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("hidden"); conditionBar.classList.add("hidden"); hpEditor.classList.remove("visible"); acEditor.classList.remove("visible"); tokenNameEl.textContent = ""; currentCharData = null; currentConditions = []; }
 
-function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); currentTokenId = null; }
+function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); currentTokenId = null; }
 
 function showLinkPanel(name) {
   linkStatus.textContent = `"${name}" has no character linked.`;
