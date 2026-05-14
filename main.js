@@ -243,10 +243,58 @@ function onSpellSelected(key, spell) {
 }
 
 // ════════════════════════════════════════
-// ATTACK (simplified — manual damage input)
+// ATTACK — Weapon Picker + Auto d20 Roll
 // ════════════════════════════════════════
 
 function hideActionPicker() { actionPicker.classList.remove("visible"); }
+
+function buildWeaponGrid() {
+  actionGrid.innerHTML = "";
+  const char = currentCharData;
+  if (!char || !char.weapons) return;
+  const equipped = char.weapons.filter((w) => w.equipped);
+  const list = equipped.length > 0 ? equipped : char.weapons;
+
+  for (const weapon of list) {
+    const card = document.createElement("div");
+    card.className = "action-card";
+    const atkSign = weapon.attackBonus >= 0 ? "+" : "";
+    const dmgSign = weapon.damageMod >= 0 ? "+" : "";
+    const props = [...(weapon.properties || []), ...(weapon.mastery || [])].join(", ");
+    card.innerHTML = `
+      <div class="action-card-left">
+        <div class="action-name">${weapon.name}</div>
+        <div class="action-type">${weapon.type}${props ? " · " + props : ""}</div>
+      </div>
+      <div class="action-card-right">
+        <span class="action-hit">${atkSign}${weapon.attackBonus}</span>
+        <span class="action-dmg">${weapon.damage}${dmgSign}${weapon.damageMod} ${weapon.damageType || ""}</span>
+      </div>
+    `;
+    card.addEventListener("click", () => onWeaponSelected(weapon));
+    actionGrid.appendChild(card);
+  }
+}
+
+function showWeaponPicker() {
+  buildWeaponGrid();
+  hideOtherPickers("action");
+  actionPicker.classList.add("visible");
+}
+
+function onWeaponSelected(weapon) {
+  selectedWeapon = weapon;
+  hideActionPicker();
+  combatState = COMBAT.TARGETING;
+  combatAction = "attack";
+  attackerData = { ...currentCharData };
+  attackerTokenId = currentTokenId;
+  document.querySelector(".hotbar-btn.attack")?.classList.add("active-action");
+  showCombatOverlay(`${attackerData.name}: ${weapon.name}`, "Click on an enemy token...");
+  logCombat(`<strong>${attackerData.name}</strong> readies <strong>${weapon.name}</strong> (${weapon.attackBonus >= 0 ? "+" : ""}${weapon.attackBonus} to hit)`, "info");
+}
+
+actionCancel.addEventListener("click", () => { hideActionPicker(); resetCombat(); });
 
 const attackInputPanel = document.getElementById("attack-input-panel");
 const attackInputTitle = document.getElementById("attack-input-title");
@@ -461,6 +509,7 @@ async function onBonusSelected(action) {
   logCombat(`⚡ <strong>${currentCharData.name}</strong> uses bonus action: <strong>${action.name}</strong>`, "info");
 
   if (action.type === "attack") {
+    selectedWeapon = action.weapon || null;
     combatState = COMBAT.TARGETING;
     combatAction = "attack";
     attackerData = { ...currentCharData };
@@ -1601,6 +1650,9 @@ function enterTargeting(action) {
 
   if (action === "spell") { showSpellPicker(); return; }
 
+  // Show weapon picker — weapon selection will enter targeting
+  if (action === "attack") { showWeaponPicker(); return; }
+
   combatState = COMBAT.TARGETING;
   combatAction = action;
   attackerData = { ...currentCharData };
@@ -1626,8 +1678,14 @@ async function pickTarget(targetToken) {
   logCombat(`<strong>${attackerData.name}</strong> targets <strong>${targetName}</strong> (AC ${targetAC})`);
 
   combatState = COMBAT.ROLLING_ATTACK;
-  showCombatOverlay(`${attackerData.name} → ${targetName}`, `AC ${targetAC} — Hit or Miss?`);
-  showAttackInput(`${attackerData.name} → ${targetName}`, `Target AC: ${targetAC}`);
+
+  // Auto-roll d20 attack with weapon bonus
+  const atkBonus = selectedWeapon?.attackBonus || 0;
+  const weaponName = selectedWeapon?.name || "Attack";
+  showCombatOverlay(`${attackerData.name}: ${weaponName} → ${targetName}`, `Rolling to hit... (AC ${targetAC})`);
+
+  const rollLabel = `${attackerData.name} ${weaponName}`;
+  await rollAttackD20(rollLabel, atkBonus, targetAC, targetName);
 }
 
 
@@ -1670,18 +1728,94 @@ async function castSingleTargetSaveSpell(targetToken) {
 }
 
 
+async function rollAttackD20(label, atkBonus, targetAC, targetName) {
+  // Roll raw d20
+  const { diceTotal } = rollDiceValues("1d20");
+  const natValue = diceTotal;
+  const finalTotal = diceTotal + atkBonus;
+
+  // Show bouncing d20 animation
+  const result = {
+    notation: "1d20", diceTotal, modifier: atkBonus, finalTotal, natValue,
+    charName: attackerData?.name || "", label, rollId: crypto.randomUUID(),
+  };
+
+  // Display via canvas d20 or 3D dice-box
+  let used3D = false;
+  if (diceReady && diceBox) {
+    try {
+      diceOverlay.className = "visible";
+      dice3dLabel.textContent = label;
+      dice3dResult.classList.remove("visible");
+      dice3dResult.innerHTML = "";
+      try { diceBox.clear(); } catch {}
+      await Promise.race([
+        diceBox.roll("1d20"),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000)),
+      ]);
+      used3D = true;
+      playSfx("dice-hit");
+      await new Promise((r) => setTimeout(r, 600));
+    } catch {
+      diceOverlay.className = "";
+    }
+  }
+
+  if (used3D) {
+    show3DResult(label, result);
+    await new Promise((r) => setTimeout(r, 1500));
+  } else {
+    showDiceResultDisplay(label, result);
+    await new Promise((r) => setTimeout(r, 3200));
+  }
+
+  // SFX
+  if (natValue === 20) setTimeout(() => playSfx("crit"), 150);
+  else if (natValue === 1) setTimeout(() => playSfx("miss"), 150);
+
+  // Broadcast
+  const modStr = atkBonus >= 0 ? `+${atkBonus}` : `${atkBonus}`;
+  const notifText = `${attackerData?.name || ""} attacks ${targetName}: ${diceTotal}${modStr} = ${finalTotal} vs AC ${targetAC}`;
+  OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
+  OBR.broadcast.sendMessage(SFX_CHANNEL, { sound: natValue === 20 ? "crit" : natValue === 1 ? "miss" : "dice-hit" }).catch(() => {});
+
+  // Log attack roll
+  const hitStr = natValue === 20 ? "NAT 20!" : natValue === 1 ? "NAT 1" : `${finalTotal} vs AC ${targetAC}`;
+  logCombat(`<strong>${attackerData.name}</strong> rolls to hit: ${diceTotal}${modStr} = <strong>${finalTotal}</strong> (${hitStr})`, "info");
+
+  // Wait for result display
+  await new Promise((r) => setTimeout(r, used3D ? 500 : 2000));
+
+  // Hide dice display
+  if (used3D) {
+    diceOverlay.className = "";
+    dice3dResult.classList.remove("visible");
+    try { diceBox?.clear(); } catch {}
+  }
+
+  // Determine outcome
+  const isCrit = natValue === 20;
+  const isNat1 = natValue === 1;
+  const isHit = isCrit || (!isNat1 && finalTotal >= targetAC);
+
+  if (isHit) {
+    resolveAttackRoll({ finalTotal, natValue });
+  } else {
+    resolveAttackRoll({ finalTotal, natValue: isNat1 ? 1 : 0 });
+  }
+}
+
 async function resolveAttackRoll(result) {
-  const { natValue } = result;
+  const { natValue, finalTotal } = result;
   const targetName = targetData?.name || "Target";
   const isCrit = natValue === 20;
-  const isMiss = natValue === 1;
+  const isMiss = natValue === 1 || (!isCrit && natValue === 0);
 
   if (isMiss) {
     logCombat(`<strong>${attackerData.name}</strong> → ${targetName}: <strong class="miss">MISS!</strong>`, "miss");
     showCombatOverlay(`MISS!`, `${attackerData.name}'s attack misses.`);
     playMissEffect();
     await broadcastSfx("miss");
-    // Token dodge effect on the target
     if (targetTokenId) tokenMissEffect(targetTokenId);
     await OBR.notification.show(`${attackerData.name} missed ${targetName}!`, "WARNING");
     setTimeout(() => resetCombat(), 2000);
