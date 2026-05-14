@@ -1824,16 +1824,100 @@ async function resolveAttackRoll(result) {
 
   if (isCrit) {
     logCombat(`<strong>${attackerData.name}</strong> → ${targetName}: <strong class="crit">CRITICAL HIT!</strong>`, "crit");
-    showCombatOverlay(`CRITICAL HIT!`, `Enter damage below`);
+    showCombatOverlay(`CRITICAL HIT!`, `Rolling damage...`);
   } else {
     logCombat(`<strong>${attackerData.name}</strong> → ${targetName}: <strong class="hit">HIT!</strong>`, "hit");
-    showCombatOverlay(`HIT!`, `Enter damage below`);
+    showCombatOverlay(`HIT!`, `Rolling damage...`);
   }
 
   attackRollResult = { natValue };
   combatState = COMBAT.ROLLING_DAMAGE;
-  const hitLabel = isCrit ? `CRIT! Enter damage → ${targetName}` : `HIT! Enter damage → ${targetName}`;
-  showDamageInput(hitLabel);
+
+  // Auto-roll damage if weapon is selected
+  if (selectedWeapon && selectedWeapon.damage) {
+    await rollDamageDice(isCrit, targetName);
+  } else {
+    // Fallback to manual input if no weapon data
+    const hitLabel = isCrit ? `CRIT! Enter damage → ${targetName}` : `HIT! Enter damage → ${targetName}`;
+    showDamageInput(hitLabel);
+  }
+}
+
+async function rollDamageDice(isCrit, targetName) {
+  const weapon = selectedWeapon;
+  const baseDice = weapon.damage || "1d4";
+  const damageMod = weapon.damageMod || 0;
+  const damageType = weapon.damageType || "damage";
+
+  // For crit: double the dice (e.g., 1d8 → 2d8, 2d6 → 4d6)
+  let notation = baseDice;
+  if (isCrit) {
+    notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
+  }
+
+  // Roll the dice
+  const { diceTotal } = rollDiceValues(notation);
+  const totalDamage = Math.max(0, diceTotal + damageMod);
+
+  const label = `${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`;
+  const modStr = damageMod > 0 ? `+${damageMod}` : damageMod < 0 ? `${damageMod}` : "";
+
+  // Show damage roll with dice animation
+  const result = {
+    notation, diceTotal, modifier: damageMod, finalTotal: totalDamage,
+    natValue: null, charName: attackerData?.name || "", label,
+    rollId: crypto.randomUUID(),
+  };
+
+  let used3D = false;
+  if (diceReady && diceBox) {
+    try {
+      diceOverlay.className = "visible";
+      dice3dLabel.textContent = label;
+      dice3dResult.classList.remove("visible");
+      dice3dResult.innerHTML = "";
+      try { diceBox.clear(); } catch {}
+      await Promise.race([
+        diceBox.roll(notation),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000)),
+      ]);
+      used3D = true;
+      playSfx("dice-hit");
+      await new Promise((r) => setTimeout(r, 600));
+    } catch {
+      diceOverlay.className = "";
+    }
+  }
+
+  if (used3D) {
+    show3DResult(label, result);
+    await new Promise((r) => setTimeout(r, 1500));
+  } else {
+    showDiceResultDisplay(label, result);
+    await new Promise((r) => setTimeout(r, 3200));
+  }
+
+  // Log damage roll
+  logCombat(
+    `<strong>${attackerData.name}</strong> ${weapon.name}: ${notation}${modStr} = <strong class="damage">${totalDamage}</strong> ${damageType}${isCrit ? " (CRIT!)" : ""}`,
+    isCrit ? "crit" : "damage"
+  );
+
+  // Broadcast
+  OBR.broadcast.sendMessage(SFX_CHANNEL, { sound: "dice-hit" }).catch(() => {});
+
+  // Wait a moment then resolve
+  await new Promise((r) => setTimeout(r, used3D ? 500 : 1500));
+
+  // Hide dice
+  if (used3D) {
+    diceOverlay.className = "";
+    dice3dResult.classList.remove("visible");
+    try { diceBox?.clear(); } catch {}
+  }
+
+  // Apply damage
+  await resolveDamage({ finalTotal: totalDamage });
 }
 
 async function resolveDamage(result) {
