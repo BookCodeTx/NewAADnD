@@ -222,19 +222,23 @@ export function startD20Roll(canvas, duration, resultNumber, onDone) {
   const startTime = performance.now();
 
   const axisSpeed = {
-    x: 5 + Math.random() * 4,
-    y: 4 + Math.random() * 5,
-    z: 3 + Math.random() * 3,
+    x: 7 + Math.random() * 5,
+    y: 6 + Math.random() * 6,
+    z: 4 + Math.random() * 4,
   };
 
-  const margin = w * 0.24;
-  let posX = w * 0.3 + Math.random() * w * 0.4;
-  let posY = h * 0.3 + Math.random() * h * 0.4;
-  let velX = (Math.random() > 0.5 ? 1 : -1) * (5 + Math.random() * 4);
-  let velY = (Math.random() > 0.5 ? 1 : -1) * (4 + Math.random() * 3);
+  const margin = w * 0.18;
+  let posX = w * 0.2 + Math.random() * w * 0.6;
+  let posY = h * 0.2 + Math.random() * h * 0.6;
+  let velX = (Math.random() > 0.5 ? 1 : -1) * (10 + Math.random() * 6);
+  let velY = (Math.random() > 0.5 ? 1 : -1) * (8 + Math.random() * 5);
+
+  // Bounce scale effect
+  let bounceScale = 1;
+  let bounceVel = 0;
 
   const dirChanges = [];
-  for (let i = 0; i < 5; i++) dirChanges.push(0.1 + i * 0.15 + Math.random() * 0.05);
+  for (let i = 0; i < 8; i++) dirChanges.push(0.06 + i * 0.1 + Math.random() * 0.04);
   let lastDirChange = -1;
 
   let phase = "rolling";
@@ -259,39 +263,53 @@ export function startD20Roll(canvas, duration, resultNumber, onDone) {
 
     if (phase === "rolling") {
       const decay = 1 - t * t;
-      const speed = Math.max(0.02, decay);
+      const speed = Math.max(0.03, decay);
 
       posX += velX * speed;
       posY += velY * speed;
 
-      if (posX < margin) { posX = margin; velX = Math.abs(velX) * 0.85; spawnBurst(posX, posY, 5); }
-      if (posX > w - margin) { posX = w - margin; velX = -Math.abs(velX) * 0.85; spawnBurst(posX, posY, 5); }
-      if (posY < margin) { posY = margin; velY = Math.abs(velY) * 0.85; spawnBurst(posY, posY, 5); }
-      if (posY > h - margin) { posY = h - margin; velY = -Math.abs(velY) * 0.85; spawnBurst(posX, posY, 5); }
+      // Wall bounces with squish effect
+      if (posX < margin) { posX = margin; velX = Math.abs(velX) * 0.9; bounceVel = 0.15; spawnBurst(posX, posY, 8); }
+      if (posX > w - margin) { posX = w - margin; velX = -Math.abs(velX) * 0.9; bounceVel = 0.15; spawnBurst(posX, posY, 8); }
+      if (posY < margin) { posY = margin; velY = Math.abs(velY) * 0.9; bounceVel = 0.15; spawnBurst(posX, posY, 8); }
+      if (posY > h - margin) { posY = h - margin; velY = -Math.abs(velY) * 0.9; bounceVel = 0.15; spawnBurst(posX, posY, 8); }
 
+      // Bounce scale spring physics
+      bounceVel += (1 - bounceScale) * 0.3;
+      bounceVel *= 0.7;
+      bounceScale += bounceVel;
+
+      // Random direction changes — more aggressive
       for (let i = 0; i < dirChanges.length; i++) {
         if (t >= dirChanges[i] && lastDirChange < i) {
           lastDirChange = i;
           const ang = Math.random() * Math.PI * 2;
-          const spd = (3 + Math.random() * 4) * speed;
+          const spd = (6 + Math.random() * 8) * speed;
           velX = Math.cos(ang) * spd;
           velY = Math.sin(ang) * spd;
-          spawnBurst(posX, posY, 7);
+          bounceVel = 0.12;
+          spawnBurst(posX, posY, 10);
         }
       }
 
-      if (t > 0.75) {
-        const s = (t - 0.75) / 0.25;
-        posX += (w / 2 - posX) * s * 0.12;
-        posY += (h / 2 - posY) * s * 0.12;
+      // Gravity-like vertical bounce during mid-roll
+      if (t > 0.15 && t < 0.65) {
+        velY += 0.6 * speed;
       }
 
-      const rotP = speed * 8;
+      if (t > 0.8) {
+        const s = (t - 0.8) / 0.2;
+        posX += (w / 2 - posX) * s * 0.15;
+        posY += (h / 2 - posY) * s * 0.15;
+      }
+
+      const rotP = speed * 10;
       finalRx = rotP * axisSpeed.x + t * 2;
       finalRy = rotP * axisSpeed.y + t * 3;
       finalRz = rotP * axisSpeed.z + t * 1.5;
 
-      const scale = t < 0.08 ? (0.5 + 0.5 * (t / 0.08)) : (1 + Math.sin(t * 20) * 0.05 * decay);
+      const baseScale = t < 0.08 ? (0.5 + 0.5 * (t / 0.08)) : (1 + Math.sin(t * 25) * 0.08 * decay);
+      const scale = baseScale * bounceScale;
       const showResult = t > 0.82 ? resultNumber : null;
 
       if (speed > 0.1 && Math.random() < speed * 0.5) spawnParticle(posX, posY, 3);
