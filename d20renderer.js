@@ -66,7 +66,8 @@ const BASE_COLOR = { r: 45, g: 45, b: 65 };     // Dark metallic
 const EDGE_COLOR = "rgba(180, 190, 210, 0.4)";
 const SPECULAR_COLOR = { r: 200, g: 210, b: 230 };
 
-export function renderD20(canvas, rx, ry, rz, scale = 1) {
+// resultNumber: if set, the most front-facing face will display this number
+export function renderD20(canvas, rx, ry, rz, scale = 1, resultNumber = null) {
   const ctx = canvas.getContext("2d");
   const w = canvas.width;
   const h = canvas.height;
@@ -110,8 +111,29 @@ export function renderD20(canvas, rx, ry, rz, scale = 1) {
     const viewDir = [0, 0, 1];
     const spec = Math.pow(Math.max(0, dot(normalize(reflect), viewDir)), 32) * 0.6;
 
-    return { pts2d, pts3d, normal, avgZ, brightness, spec, number: FACE_NUMBERS[fi], cen };
+    return { pts2d, pts3d, normal, avgZ, brightness, spec, number: FACE_NUMBERS[fi], cen, faceIdx: fi };
   });
+
+  // If resultNumber is set, swap it onto the most front-facing face
+  if (resultNumber !== null) {
+    // Find the face with highest z-normal (most front-facing)
+    let bestIdx = 0;
+    let bestZ = -Infinity;
+    for (let i = 0; i < faceData.length; i++) {
+      if (faceData[i].normal[2] > bestZ) {
+        bestZ = faceData[i].normal[2];
+        bestIdx = i;
+      }
+    }
+    // Find the face that currently has the result number
+    const resultIdx = faceData.findIndex(f => f.number === resultNumber);
+    if (resultIdx >= 0 && resultIdx !== bestIdx) {
+      // Swap numbers
+      const tmp = faceData[bestIdx].number;
+      faceData[bestIdx].number = faceData[resultIdx].number;
+      faceData[resultIdx].number = tmp;
+    }
+  }
 
   // Sort by Z (back to front)
   faceData.sort((a, b) => a.avgZ - b.avgZ);
@@ -170,7 +192,7 @@ export function renderD20(canvas, rx, ry, rz, scale = 1) {
 // ── Animated roll ──
 let animFrame = null;
 
-export function startD20Roll(canvas, duration = 2200, onDone) {
+export function startD20Roll(canvas, duration = 2200, resultNumber = null, onDone = null) {
   cancelAnimationFrame(animFrame);
 
   const startTime = performance.now();
@@ -187,7 +209,6 @@ export function startD20Roll(canvas, duration = 2200, onDone) {
 
     // Ease-out: fast spin → slow stop
     const ease = 1 - Math.pow(1 - t, 3); // cubic ease-out
-    const decel = 1 - ease; // deceleration factor
 
     // Rotation angles (spin fast then slow)
     const progress = ease * 8; // total rotations worth
@@ -198,11 +219,15 @@ export function startD20Roll(canvas, duration = 2200, onDone) {
     // Slight scale bounce
     const bounce = t < 0.3 ? 0.85 + 0.15 * (t / 0.3) : 1 + Math.sin(t * Math.PI * 3) * 0.03 * (1 - t);
 
-    renderD20(canvas, rx, ry, rz, bounce);
+    // Only show result number on the last ~20% of the animation (settling phase)
+    const showResult = t > 0.8 ? resultNumber : null;
+    renderD20(canvas, rx, ry, rz, bounce, showResult);
 
     if (t < 1) {
       animFrame = requestAnimationFrame(frame);
     } else {
+      // Final frame with result locked in
+      renderD20(canvas, rx, ry, rz, 1, resultNumber);
       if (onDone) onDone();
     }
   }

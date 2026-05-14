@@ -1776,8 +1776,7 @@ function showDiceResultDisplay(label, result) {
 
   const canvas = document.getElementById("d20-canvas");
   stopD20Roll();
-
-  startD20Roll(canvas, 2200, () => {
+  startD20Roll(canvas, 2200, diceTotal, () => {
     // Roll done — show result
     playSfx("dice-hit");
 
