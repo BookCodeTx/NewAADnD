@@ -189,13 +189,13 @@ function drawD20(ctx, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
       ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.8})`;
       ctx.fillText(String(number), cenX + 0.8, cenY + 0.8);
 
-      // Red number (like reference image)
-      ctx.fillStyle = `rgba(220, 50, 30, ${alpha})`;
+      // White number
+      ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
       ctx.fillText(String(number), cenX, cenY);
 
       // Subtle bright highlight on number
       if (spec > 0.2) {
-        ctx.fillStyle = `rgba(255, 120, 80, ${alpha * spec * 0.4})`;
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * spec * 0.3})`;
         ctx.fillText(String(number), cenX, cenY);
       }
     }
