@@ -1762,17 +1762,18 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
     }
   }
 
+  // SFX
+  if (natValue === 20) setTimeout(() => playSfx("crit"), 150);
+  else if (natValue === 1) setTimeout(() => playSfx("miss"), 150);
+
   if (used3D) {
     show3DResult(label, result);
     await new Promise((r) => setTimeout(r, 1500));
   } else {
     showDiceResultDisplay(label, result, "d20");
-    await new Promise((r) => setTimeout(r, 3200));
+    // Wait for dice animation (2.8s) + result hold (5s)
+    await new Promise((r) => setTimeout(r, 8000));
   }
-
-  // SFX
-  if (natValue === 20) setTimeout(() => playSfx("crit"), 150);
-  else if (natValue === 1) setTimeout(() => playSfx("miss"), 150);
 
   // Broadcast
   const modStr = atkBonus >= 0 ? `+${atkBonus}` : `${atkBonus}`;
@@ -1783,9 +1784,6 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
   // Log attack roll
   const hitStr = natValue === 20 ? "NAT 20!" : natValue === 1 ? "NAT 1" : `${finalTotal} vs AC ${targetAC}`;
   logCombat(`<strong>${attackerData.name}</strong> rolls to hit: ${diceTotal}${modStr} = <strong>${finalTotal}</strong> (${hitStr})`, "info");
-
-  // Wait for result display
-  await new Promise((r) => setTimeout(r, used3D ? 500 : 2000));
 
   // Hide dice display
   if (used3D) {
@@ -1942,7 +1940,8 @@ async function rollDamageDice(isCrit, targetName) {
     await new Promise((r) => setTimeout(r, 1500));
   } else {
     showDiceResultDisplay(label, result, dieType);
-    await new Promise((r) => setTimeout(r, 3200));
+    // Wait for dice animation (2.8s) + result hold (5s)
+    await new Promise((r) => setTimeout(r, 8000));
   }
 
   // Log damage roll
@@ -1954,11 +1953,9 @@ async function rollDamageDice(isCrit, targetName) {
   // Broadcast
   OBR.broadcast.sendMessage(SFX_CHANNEL, { sound: "dice-hit" }).catch(() => {});
 
-  // Wait a moment then resolve
-  await new Promise((r) => setTimeout(r, used3D ? 500 : 1500));
-
   // Hide dice
   if (used3D) {
+    await new Promise((r) => setTimeout(r, 500));
     diceOverlay.className = "";
     dice3dResult.classList.remove("visible");
     try { diceBox?.clear(); } catch {}
