@@ -261,10 +261,11 @@ function buildWeaponGrid() {
     card.className = "action-card";
     const atkSign = weapon.attackBonus >= 0 ? "+" : "";
     const dmgSign = weapon.damageMod >= 0 ? "+" : "";
-    const props = [...(weapon.properties || []), ...(weapon.mastery || [])].join(", ");
+    const props = (weapon.properties || []).join(", ");
+    const masteryTags = (weapon.mastery || []).map(m => `<span class="mastery-tag">${m}</span>`).join("");
     card.innerHTML = `
       <div class="action-card-left">
-        <div class="action-name">${weapon.name}</div>
+        <div class="action-name">${weapon.name} ${masteryTags}</div>
         <div class="action-type">${weapon.type}${props ? " · " + props : ""}</div>
       </div>
       <div class="action-card-right">
@@ -1811,6 +1812,40 @@ async function resolveAttackRoll(result) {
   const isMiss = natValue === 1 || (!isCrit && natValue === 0);
 
   if (isMiss) {
+    // ── Graze mastery: on miss (not nat 1), deal ability mod damage ──
+    const hasGraze = selectedWeapon?.mastery?.includes("Graze");
+    if (hasGraze && natValue !== 1) {
+      const grazeDmg = Math.max(0, selectedWeapon.abilityMod || selectedWeapon.damageMod || 0);
+      const dmgType = selectedWeapon.damageType || "damage";
+      logCombat(`<strong>${attackerData.name}</strong> → ${targetName}: <strong class="miss">MISS!</strong> but <strong class="hit">Graze</strong> deals <strong class="damage">${grazeDmg}</strong> ${dmgType}`, "hit");
+      showCombatOverlay(`MISS — Graze!`, `${grazeDmg} ${dmgType} damage`);
+      playMissEffect();
+      await broadcastSfx("miss");
+      if (targetTokenId) tokenMissEffect(targetTokenId);
+
+      // Apply graze damage
+      if (targetData && targetTokenId && grazeDmg > 0) {
+        let remaining = grazeDmg;
+        let newTemp = targetData.hp.temp || 0;
+        if (newTemp > 0) { const absorbed = Math.min(newTemp, remaining); newTemp -= absorbed; remaining -= absorbed; }
+        const newCurrent = Math.max(0, targetData.hp.current - remaining);
+        await OBR.scene.items.updateItems([targetTokenId], (items) => {
+          for (const item of items) {
+            const meta = item.metadata[METADATA_KEY];
+            if (!meta?.character) return;
+            meta.character.hp.current = newCurrent;
+            meta.character.hp.temp = newTemp;
+            meta.lastUpdated = Date.now();
+          }
+        });
+        await syncInitiativeHP();
+        logCombat(`${targetName}: ${targetData.hp.current} → <strong>${newCurrent}</strong>/${targetData.hp.max} HP`, "damage");
+        await OBR.notification.show(`${attackerData.name} grazes ${targetName} for ${grazeDmg} damage!`, "WARNING");
+      }
+      setTimeout(() => resetCombat(), 2500);
+      return;
+    }
+
     logCombat(`<strong>${attackerData.name}</strong> → ${targetName}: <strong class="miss">MISS!</strong>`, "miss");
     showCombatOverlay(`MISS!`, `${attackerData.name}'s attack misses.`);
     playMissEffect();
@@ -2035,12 +2070,55 @@ async function resolveDamage(result) {
 
   setTimeout(async () => {
     await broadcastSfx("damage");
-    await showFloatingDamage(targetTokenId, damage, "Slashing", { isCrit });
+    await showFloatingDamage(targetTokenId, damage, selectedWeapon?.damageType || "Slashing", { isCrit });
     // If target is down, play collapse effect
     if (isDown && targetTokenId) tokenDownEffect(targetTokenId);
   }, 400);
 
+  // ── Weapon Mastery effects on hit ──
+  applyMasteryOnHit(targetName, isDown);
+
   setTimeout(() => resetCombat(), 3200);
+}
+
+function applyMasteryOnHit(targetName, isDown) {
+  const mastery = selectedWeapon?.mastery;
+  if (!mastery || mastery.length === 0 || isDown) return;
+
+  for (const m of mastery) {
+    switch (m) {
+      case "Sap":
+        logCombat(`⚔️ <strong>Sap</strong>: ${targetName} has <strong>disadvantage</strong> on next attack roll`, "info");
+        break;
+      case "Slow":
+        logCombat(`⚔️ <strong>Slow</strong>: ${targetName}'s speed reduced by <strong>10 ft</strong> until start of ${attackerData.name}'s next turn`, "info");
+        break;
+      case "Topple": {
+        const dc = 8 + (selectedWeapon.abilityMod || 0) + (attackerData.proficiencyBonus || 2);
+        const conMod = getSaveMod(targetData, "CON");
+        const saveResult = rollSave(conMod);
+        const saved = saveResult.total >= dc;
+        if (saved) {
+          logCombat(`⚔️ <strong>Topple</strong>: ${targetName} CON Save ${saveResult.roll}+${conMod}=${saveResult.total} vs DC ${dc} — <strong class="hit">SAVED</strong>`, "info");
+        } else {
+          logCombat(`⚔️ <strong>Topple</strong>: ${targetName} CON Save ${saveResult.roll}+${conMod}=${saveResult.total} vs DC ${dc} — <strong class="miss">PRONE!</strong>`, "hit");
+        }
+        break;
+      }
+      case "Push":
+        logCombat(`⚔️ <strong>Push</strong>: ${targetName} pushed <strong>10 ft</strong> away`, "info");
+        break;
+      case "Vex":
+        logCombat(`⚔️ <strong>Vex</strong>: ${attackerData.name} has <strong>advantage</strong> on next attack vs ${targetName}`, "info");
+        break;
+      case "Nick":
+        logCombat(`⚔️ <strong>Nick</strong>: ${attackerData.name} can make an extra attack as part of the Attack action`, "info");
+        break;
+      case "Cleave":
+        logCombat(`⚔️ <strong>Cleave</strong>: ${attackerData.name} can hit another creature within 5ft of ${targetName} (${selectedWeapon.abilityMod || 0} ${selectedWeapon.damageType} damage)`, "info");
+        break;
+    }
+  }
 }
 
 async function syncInitiativeHP() {
