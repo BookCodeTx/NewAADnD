@@ -1936,8 +1936,8 @@ async function rollDamageDice(isCrit, targetName) {
     notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
   }
 
-  // Roll the dice
-  const { diceTotal } = rollDiceValues(notation);
+  // Roll the dice (with individual results for multi-dice display)
+  const { diceTotal, individualResults } = rollDiceValues(notation);
   const totalDamage = Math.max(0, diceTotal + damageMod);
 
   const label = `${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`;
@@ -1947,7 +1947,7 @@ async function rollDamageDice(isCrit, targetName) {
   const result = {
     notation, diceTotal, modifier: damageMod, finalTotal: totalDamage,
     natValue: null, charName: attackerData?.name || "", label,
-    rollId: crypto.randomUUID(),
+    rollId: crypto.randomUUID(), individualResults,
   };
 
   let used3D = false;
@@ -2198,6 +2198,7 @@ function rollDiceValues(notation) {
   let diceTotal = 0;
   let sides = 20;
   let diceCount = 0;
+  const individualResults = [];
   const parts = notation.replace(/\s/g, "").split("+");
   for (const part of parts) {
     const match = part.match(/^(\d+)d(\d+)$/);
@@ -2205,7 +2206,9 @@ function rollDiceValues(notation) {
       const count = parseInt(match[1]);
       sides = parseInt(match[2]);
       for (let i = 0; i < count; i++) {
-        diceTotal += Math.floor(Math.random() * sides) + 1;
+        const val = Math.floor(Math.random() * sides) + 1;
+        diceTotal += val;
+        individualResults.push(val);
         diceCount++;
       }
     } else {
@@ -2213,15 +2216,18 @@ function rollDiceValues(notation) {
     }
   }
   const isSingleD20 = notation.trim() === "1d20";
-  return { diceTotal, sides, diceCount, isSingleD20 };
+  return { diceTotal, sides, diceCount, isSingleD20, individualResults };
 }
 
 function showDiceResultDisplay(label, result, dieType) {
-  const { diceTotal, modifier, finalTotal, natValue } = result;
+  const { diceTotal, modifier, finalTotal, natValue, individualResults } = result;
   const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
   const detail = modifier !== 0 ? `${diceTotal}${modStr} = ${finalTotal}` : `${diceTotal}`;
 
   const resolvedDie = dieType || parseDieType(result.notation) || "d20";
+
+  // Use individual results for multi-dice, or single total
+  const diceResults = (individualResults && individualResults.length > 1) ? individualResults : diceTotal;
 
   // Phase 1: Show rolling dice
   diceResultLabel.textContent = label || "";
@@ -2231,7 +2237,7 @@ function showDiceResultDisplay(label, result, dieType) {
 
   const canvas = document.getElementById("d20-canvas");
   stopDiceRoll();
-  startDiceRoll(canvas, 2800, resolvedDie, diceTotal, () => {
+  startDiceRoll(canvas, 2800, resolvedDie, diceResults, () => {
     // Roll done — show result
     playSfx("dice-hit");
 
@@ -2278,7 +2284,7 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
   const rid = rollId || crypto.randomUUID();
   pendingRollId = rid;
 
-  const { diceTotal: fallbackTotal, isSingleD20 } = rollDiceValues(notation);
+  const { diceTotal: fallbackTotal, isSingleD20, individualResults } = rollDiceValues(notation);
   let diceTotal = fallbackTotal;
   let used3D = false;
 
@@ -2312,7 +2318,7 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
 
   const result = {
     notation, diceTotal, modifier, finalTotal, natValue,
-    charName, label, rollId: rid,
+    charName, label, rollId: rid, individualResults,
   };
 
   // SFX for nat 20/1

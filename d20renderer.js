@@ -287,17 +287,22 @@ function drawDice(ctx, dieType, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
 }
 
 // ════════════════════════════════════════
-// BOUNCING ANIMATED ROLL
+// BOUNCING ANIMATED ROLL (supports multiple dice)
 // ════════════════════════════════════════
 
 let animFrame = null;
 
-export function startDiceRoll(canvas, duration, dieType, resultNumber, onDone) {
+// resultNumbers: single number OR array of numbers (one per die)
+export function startDiceRoll(canvas, duration, dieType, resultNumbers, onDone) {
   cancelAnimationFrame(animFrame);
   animFrame = null;
   particles = [];
   duration = duration || 2800;
   dieType = dieType || "d20";
+
+  // Normalize to array
+  const results = Array.isArray(resultNumbers) ? resultNumbers : [resultNumbers];
+  const diceCount = results.length;
 
   const ctx = canvas.getContext("2d");
   if (!ctx) { if (onDone) onDone(); return; }
@@ -306,29 +311,41 @@ export function startDiceRoll(canvas, duration, dieType, resultNumber, onDone) {
   const h = canvas.height;
   const startTime = performance.now();
 
-  const axisSpeed = {
-    x: 7 + Math.random() * 5,
-    y: 6 + Math.random() * 6,
-    z: 4 + Math.random() * 4,
-  };
+  // Scale down dice when there are multiple
+  const sizeMultiplier = diceCount === 1 ? 1 : diceCount === 2 ? 0.75 : diceCount <= 4 ? 0.6 : 0.5;
+
+  // Create independent physics for each die
+  const dice = [];
+  for (let di = 0; di < diceCount; di++) {
+    const ang = (di / diceCount) * Math.PI * 2 + Math.random() * 0.5;
+    // Settle positions: spread evenly around center
+    const settleAngle = diceCount === 1 ? 0 : (di / diceCount) * Math.PI * 2 - Math.PI / 2;
+    const settleRadius = diceCount === 1 ? 0 : w * 0.12;
+    dice.push({
+      posX: w * 0.2 + Math.random() * w * 0.6,
+      posY: h * 0.2 + Math.random() * h * 0.6,
+      velX: Math.cos(ang) * (8 + Math.random() * 6),
+      velY: Math.sin(ang) * (6 + Math.random() * 5),
+      bounceScale: 1,
+      bounceVel: 0,
+      axisSpeed: {
+        x: 6 + Math.random() * 6,
+        y: 5 + Math.random() * 7,
+        z: 3 + Math.random() * 5,
+      },
+      finalRx: 0, finalRy: 0, finalRz: 0,
+      dirChanges: Array.from({ length: 6 }, (_, i) => 0.08 + i * 0.12 + Math.random() * 0.06),
+      lastDirChange: -1,
+      result: results[di],
+      settleX: w / 2 + Math.cos(settleAngle) * settleRadius,
+      settleY: h / 2 + Math.sin(settleAngle) * settleRadius,
+    });
+  }
 
   const margin = w * 0.18;
-  let posX = w * 0.2 + Math.random() * w * 0.6;
-  let posY = h * 0.2 + Math.random() * h * 0.6;
-  let velX = (Math.random() > 0.5 ? 1 : -1) * (10 + Math.random() * 6);
-  let velY = (Math.random() > 0.5 ? 1 : -1) * (8 + Math.random() * 5);
-
-  let bounceScale = 1;
-  let bounceVel = 0;
-
-  const dirChanges = [];
-  for (let i = 0; i < 8; i++) dirChanges.push(0.06 + i * 0.1 + Math.random() * 0.04);
-  let lastDirChange = -1;
-
   let phase = "rolling";
   let settleStart = 0;
   let flashAlpha = 0;
-  let finalRx = 0, finalRy = 0, finalRz = 0;
 
   function clearBg() {
     ctx.clearRect(0, 0, w, h);
@@ -348,53 +365,54 @@ export function startDiceRoll(canvas, duration, dieType, resultNumber, onDone) {
       const decay = 1 - t * t;
       const speed = Math.max(0.03, decay);
 
-      posX += velX * speed;
-      posY += velY * speed;
+      for (const d of dice) {
+        d.posX += d.velX * speed;
+        d.posY += d.velY * speed;
 
-      if (posX < margin) { posX = margin; velX = Math.abs(velX) * 0.9; bounceVel = 0.15; spawnBurst(posX, posY, 8); }
-      if (posX > w - margin) { posX = w - margin; velX = -Math.abs(velX) * 0.9; bounceVel = 0.15; spawnBurst(posX, posY, 8); }
-      if (posY < margin) { posY = margin; velY = Math.abs(velY) * 0.9; bounceVel = 0.15; spawnBurst(posX, posY, 8); }
-      if (posY > h - margin) { posY = h - margin; velY = -Math.abs(velY) * 0.9; bounceVel = 0.15; spawnBurst(posX, posY, 8); }
+        if (d.posX < margin) { d.posX = margin; d.velX = Math.abs(d.velX) * 0.9; d.bounceVel = 0.15; spawnBurst(d.posX, d.posY, 5); }
+        if (d.posX > w - margin) { d.posX = w - margin; d.velX = -Math.abs(d.velX) * 0.9; d.bounceVel = 0.15; spawnBurst(d.posX, d.posY, 5); }
+        if (d.posY < margin) { d.posY = margin; d.velY = Math.abs(d.velY) * 0.9; d.bounceVel = 0.15; spawnBurst(d.posX, d.posY, 5); }
+        if (d.posY > h - margin) { d.posY = h - margin; d.velY = -Math.abs(d.velY) * 0.9; d.bounceVel = 0.15; spawnBurst(d.posX, d.posY, 5); }
 
-      bounceVel += (1 - bounceScale) * 0.3;
-      bounceVel *= 0.7;
-      bounceScale += bounceVel;
+        d.bounceVel += (1 - d.bounceScale) * 0.3;
+        d.bounceVel *= 0.7;
+        d.bounceScale += d.bounceVel;
 
-      for (let i = 0; i < dirChanges.length; i++) {
-        if (t >= dirChanges[i] && lastDirChange < i) {
-          lastDirChange = i;
-          const ang = Math.random() * Math.PI * 2;
-          const spd = (6 + Math.random() * 8) * speed;
-          velX = Math.cos(ang) * spd;
-          velY = Math.sin(ang) * spd;
-          bounceVel = 0.12;
-          spawnBurst(posX, posY, 10);
+        for (let i = 0; i < d.dirChanges.length; i++) {
+          if (t >= d.dirChanges[i] && d.lastDirChange < i) {
+            d.lastDirChange = i;
+            const ang = Math.random() * Math.PI * 2;
+            const spd = (5 + Math.random() * 7) * speed;
+            d.velX = Math.cos(ang) * spd;
+            d.velY = Math.sin(ang) * spd;
+            d.bounceVel = 0.1;
+            spawnBurst(d.posX, d.posY, 6);
+          }
         }
+
+        if (t > 0.15 && t < 0.65) d.velY += 0.5 * speed;
+
+        if (t > 0.8) {
+          const s = (t - 0.8) / 0.2;
+          d.posX += (d.settleX - d.posX) * s * 0.15;
+          d.posY += (d.settleY - d.posY) * s * 0.15;
+        }
+
+        const rotP = speed * 10;
+        d.finalRx = rotP * d.axisSpeed.x + t * 2;
+        d.finalRy = rotP * d.axisSpeed.y + t * 3;
+        d.finalRz = rotP * d.axisSpeed.z + t * 1.5;
       }
-
-      if (t > 0.15 && t < 0.65) {
-        velY += 0.6 * speed;
-      }
-
-      if (t > 0.8) {
-        const s = (t - 0.8) / 0.2;
-        posX += (w / 2 - posX) * s * 0.15;
-        posY += (h / 2 - posY) * s * 0.15;
-      }
-
-      const rotP = speed * 10;
-      finalRx = rotP * axisSpeed.x + t * 2;
-      finalRy = rotP * axisSpeed.y + t * 3;
-      finalRz = rotP * axisSpeed.z + t * 1.5;
-
-      const baseScale = t < 0.08 ? (0.5 + 0.5 * (t / 0.08)) : (1 + Math.sin(t * 25) * 0.08 * decay);
-      const scale = baseScale * bounceScale;
-      const showResult = t > 0.82 ? resultNumber : null;
-
-      if (speed > 0.1 && Math.random() < speed * 0.5) spawnParticle(posX, posY, 3);
 
       updateParticles(ctx);
-      drawDice(ctx, dieType, w, h, posX, posY, finalRx, finalRy, finalRz, scale, showResult);
+
+      for (const d of dice) {
+        const baseScale = t < 0.08 ? (0.5 + 0.5 * (t / 0.08)) : (1 + Math.sin(t * 25) * 0.08 * decay);
+        const scale = baseScale * d.bounceScale * sizeMultiplier;
+        const showResult = t > 0.82 ? d.result : null;
+        if (speed > 0.15 && Math.random() < speed * 0.3) spawnParticle(d.posX, d.posY, 2);
+        drawDice(ctx, dieType, w, h, d.posX, d.posY, d.finalRx, d.finalRy, d.finalRz, scale, showResult);
+      }
 
       if (t < 1) {
         animFrame = requestAnimationFrame(tick);
@@ -402,7 +420,7 @@ export function startDiceRoll(canvas, duration, dieType, resultNumber, onDone) {
         phase = "settling";
         settleStart = now;
         flashAlpha = 0.3;
-        spawnBurst(w / 2, h / 2, 20);
+        spawnBurst(w / 2, h / 2, 15);
         animFrame = requestAnimationFrame(tick);
       }
 
@@ -417,7 +435,9 @@ export function startDiceRoll(canvas, duration, dieType, resultNumber, onDone) {
       }
 
       updateParticles(ctx);
-      drawDice(ctx, dieType, w, h, w / 2, h / 2, finalRx, finalRy, finalRz, 1, resultNumber);
+      for (const d of dice) {
+        drawDice(ctx, dieType, w, h, d.settleX, d.settleY, d.finalRx, d.finalRy, d.finalRz, sizeMultiplier, d.result);
+      }
 
       const ga = 0.06 + Math.sin(sElapsed * 0.008) * 0.02;
       const ring = ctx.createRadialGradient(w/2, h/2, w * 0.08, w/2, h/2, w * 0.42);
@@ -431,7 +451,9 @@ export function startDiceRoll(canvas, duration, dieType, resultNumber, onDone) {
       } else {
         phase = "done";
         clearBg();
-        drawDice(ctx, dieType, w, h, w / 2, h / 2, finalRx, finalRy, finalRz, 1, resultNumber);
+        for (const d of dice) {
+          drawDice(ctx, dieType, w, h, d.settleX, d.settleY, d.finalRx, d.finalRy, d.finalRz, sizeMultiplier, d.result);
+        }
         const fg = ctx.createRadialGradient(w/2, h/2, w * 0.06, w/2, h/2, w * 0.38);
         fg.addColorStop(0, "rgba(180, 40, 20, 0.08)");
         fg.addColorStop(1, "transparent");
