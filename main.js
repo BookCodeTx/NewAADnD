@@ -5,7 +5,7 @@ import { CONDITIONS, getConditionPenalty, shouldAutoFailSave } from "./condition
 import { playSfx } from "./sfx.js";
 import { playHitEffect, playCritEffect, playMissEffect, playHealEffect, playSpellEffect, screenShake, getDiceColor } from "./effects.js";
 import { parseCharacter } from "./server/parser.js";
-import { startD20Roll, stopD20Roll } from "./d20renderer.js";
+import { startDiceRoll, stopDiceRoll, startD20Roll, stopD20Roll, parseDieType } from "./d20renderer.js";
 
 const METADATA_KEY = "com.dnd-hotbar/character";
 const INIT_METADATA_KEY = "com.dnd-hotbar/initiative";
@@ -1765,7 +1765,7 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
     show3DResult(label, result);
     await new Promise((r) => setTimeout(r, 1500));
   } else {
-    showDiceResultDisplay(label, result);
+    showDiceResultDisplay(label, result, "d20");
     await new Promise((r) => setTimeout(r, 3200));
   }
 
@@ -1849,6 +1849,9 @@ async function rollDamageDice(isCrit, targetName) {
   const damageMod = weapon.damageMod || 0;
   const damageType = weapon.damageType || "damage";
 
+  // Determine die type from weapon damage (e.g., "1d8" → "d8")
+  const dieType = parseDieType(baseDice) || "d6";
+
   // For crit: double the dice (e.g., 1d8 → 2d8, 2d6 → 4d6)
   let notation = baseDice;
   if (isCrit) {
@@ -1862,7 +1865,7 @@ async function rollDamageDice(isCrit, targetName) {
   const label = `${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`;
   const modStr = damageMod > 0 ? `+${damageMod}` : damageMod < 0 ? `${damageMod}` : "";
 
-  // Show damage roll with dice animation
+  // Show damage roll with correct die shape
   const result = {
     notation, diceTotal, modifier: damageMod, finalTotal: totalDamage,
     natValue: null, charName: attackerData?.name || "", label,
@@ -1893,7 +1896,7 @@ async function rollDamageDice(isCrit, targetName) {
     show3DResult(label, result);
     await new Promise((r) => setTimeout(r, 1500));
   } else {
-    showDiceResultDisplay(label, result);
+    showDiceResultDisplay(label, result, dieType);
     await new Promise((r) => setTimeout(r, 3200));
   }
 
@@ -2093,20 +2096,22 @@ function rollDiceValues(notation) {
   return { diceTotal, sides, diceCount, isSingleD20 };
 }
 
-function showDiceResultDisplay(label, result) {
+function showDiceResultDisplay(label, result, dieType) {
   const { diceTotal, modifier, finalTotal, natValue } = result;
   const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
   const detail = modifier !== 0 ? `${diceTotal}${modStr} = ${finalTotal}` : `${diceTotal}`;
 
-  // Phase 1: Show rolling 3D D20
+  const resolvedDie = dieType || parseDieType(result.notation) || "d20";
+
+  // Phase 1: Show rolling dice
   diceResultLabel.textContent = label || "";
   diceResultValue.textContent = "";
   diceResultDetail.textContent = "";
   diceResultEl.className = "visible rolling";
 
   const canvas = document.getElementById("d20-canvas");
-  stopD20Roll();
-  startD20Roll(canvas, 2800, diceTotal, () => {
+  stopDiceRoll();
+  startDiceRoll(canvas, 2800, resolvedDie, diceTotal, () => {
     // Roll done — show result
     playSfx("dice-hit");
 
@@ -2194,13 +2199,14 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
   if (natValue === 20) setTimeout(() => playSfx("crit"), 150);
   else if (natValue === 1) setTimeout(() => playSfx("miss"), 150);
 
-  // Show result
+  // Show result with correct die shape
+  const dieType = parseDieType(notation) || "d20";
   if (used3D) {
     show3DResult(label, result);
     await new Promise((r) => setTimeout(r, 1500));
   } else {
-    showDiceResultDisplay(label, result);
-    // Wait for d20 animation (2.8s) + result display (5s)
+    showDiceResultDisplay(label, result, dieType);
+    // Wait for dice animation (2.8s) + result display (5s)
     await new Promise((r) => setTimeout(r, 3200));
   }
 
