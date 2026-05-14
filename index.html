@@ -291,39 +291,55 @@
     .nat-fail #dice-3d-result .dice-total { color: #e94560; text-shadow: 0 0 24px rgba(233,69,96,0.8); }
     .nat-fail #dice-3d-result .dice-extra { color: #e94560; }
 
-    /* ═══ DICE RESULT (with rolling animation) ═══ */
-    #dice-result { display: none; width: 100%; max-width: 500px; padding: 16px; background: linear-gradient(180deg, #1a102e, #0d0d1a); border: 2px solid #e94560; border-radius: 12px; margin-top: 6px; text-align: center; }
-    #dice-result.visible { display: block; animation: dice-pop 0.3s cubic-bezier(0.34,1.56,0.64,1); }
+    /* ═══ DICE RESULT (with 3D rolling animation) ═══ */
+    #dice-result { display: none; width: 100%; max-width: 500px; padding: 16px; background: linear-gradient(180deg, #1a102e, #0d0d1a); border: 2px solid #e94560; border-radius: 12px; margin-top: 6px; text-align: center; overflow: hidden; }
+    #dice-result.visible { display: block; }
     #dice-result.nat-crit { border-color: #ffd700; box-shadow: 0 0 24px rgba(255,215,0,0.5); }
     #dice-result.nat-fail { border-color: #e94560; box-shadow: 0 0 24px rgba(233,69,96,0.5); }
     #dice-result-label { font-size: 10px; color: #8899aa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-    /* Rolling dice icon */
-    #dice-rolling { display: none; margin: 12px auto; }
+
+    /* ── 3D Rolling Dice ── */
+    #dice-rolling { display: none; height: 120px; perspective: 400px; position: relative; margin: 8px 0; }
     #dice-result.rolling #dice-rolling { display: block; }
     #dice-result.rolling #dice-result-value,
     #dice-result.rolling #dice-result-detail { display: none; }
-    .dice-icon { width: 64px; height: 64px; margin: 0 auto; position: relative; animation: dice-tumble 0.6s ease-in-out infinite; }
-    .dice-icon svg { width: 100%; height: 100%; filter: drop-shadow(0 0 12px rgba(233,69,96,0.6)); }
-    .dice-numbers { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 900; color: #fff; text-shadow: 0 0 8px rgba(233,69,96,0.8); animation: dice-number-spin 0.15s steps(1) infinite; }
-    @keyframes dice-tumble {
-      0% { transform: rotate(0deg) scale(1); }
-      25% { transform: rotate(15deg) scale(1.1); }
-      50% { transform: rotate(0deg) scale(1); }
-      75% { transform: rotate(-15deg) scale(1.1); }
-      100% { transform: rotate(0deg) scale(1); }
+
+    .dice-stage { width: 70px; height: 70px; position: absolute; left: 50%; top: 50%; margin-left: -35px; margin-top: -35px; transform-style: preserve-3d; animation: dice-roll 1.8s cubic-bezier(0.2, 0.8, 0.3, 1) forwards; }
+
+    .dice-cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; }
+
+    .dice-face { position: absolute; width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 900; color: #fff; border-radius: 10px; border: 2px solid rgba(233,69,96,0.6); backface-visibility: hidden; text-shadow: 0 0 8px rgba(233,69,96,0.6); }
+    .dice-face:nth-child(1) { background: linear-gradient(135deg, #2a1040, #1a0828); transform: rotateY(0deg) translateZ(35px); }
+    .dice-face:nth-child(2) { background: linear-gradient(135deg, #281038, #1a0828); transform: rotateY(90deg) translateZ(35px); }
+    .dice-face:nth-child(3) { background: linear-gradient(135deg, #261030, #1a0828); transform: rotateY(180deg) translateZ(35px); }
+    .dice-face:nth-child(4) { background: linear-gradient(135deg, #241028, #1a0828); transform: rotateY(-90deg) translateZ(35px); }
+    .dice-face:nth-child(5) { background: linear-gradient(135deg, #221020, #1a0828); transform: rotateX(90deg) translateZ(35px); }
+    .dice-face:nth-child(6) { background: linear-gradient(135deg, #201018, #1a0828); transform: rotateX(-90deg) translateZ(35px); }
+
+    /* Shadow under dice */
+    .dice-shadow { position: absolute; bottom: 10px; left: 50%; width: 50px; height: 12px; margin-left: -25px; background: radial-gradient(ellipse, rgba(0,0,0,0.5) 0%, transparent 70%); border-radius: 50%; animation: dice-shadow-anim 1.8s cubic-bezier(0.2, 0.8, 0.3, 1) forwards; }
+
+    @keyframes dice-roll {
+      0%   { transform: translate(-120px, -30px) rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+      15%  { transform: translate(-60px, 10px) rotateX(270deg) rotateY(180deg) rotateZ(90deg); }
+      30%  { transform: translate(0px, -20px) rotateX(540deg) rotateY(360deg) rotateZ(180deg); }
+      45%  { transform: translate(40px, 10px) rotateX(720deg) rotateY(540deg) rotateZ(240deg); }
+      60%  { transform: translate(20px, -5px) rotateX(900deg) rotateY(630deg) rotateZ(300deg); }
+      75%  { transform: translate(5px, 5px) rotateX(1020deg) rotateY(690deg) rotateZ(340deg); }
+      90%  { transform: translate(-2px, 0px) rotateX(1070deg) rotateY(710deg) rotateZ(355deg); }
+      100% { transform: translate(0px, 0px) rotateX(1080deg) rotateY(720deg) rotateZ(360deg); }
     }
-    @keyframes dice-number-spin {
-      0% { content: ""; } 10% { content: ""; } 20% { content: ""; }
-      30% { content: ""; } 40% { content: ""; } 50% { content: ""; }
-      60% { content: ""; } 70% { content: ""; } 80% { content: ""; }
-      90% { content: ""; } 100% { content: ""; }
+
+    @keyframes dice-shadow-anim {
+      0%   { transform: scale(0.3); opacity: 0.2; }
+      15%  { transform: scale(0.8); opacity: 0.5; }
+      30%  { transform: scale(0.4); opacity: 0.2; }
+      45%  { transform: scale(0.9); opacity: 0.6; }
+      60%  { transform: scale(0.5); opacity: 0.3; }
+      75%  { transform: scale(0.85); opacity: 0.5; }
+      100% { transform: scale(1); opacity: 0.6; }
     }
-    @keyframes dice-settle {
-      0% { transform: rotate(-10deg) scale(1.15); }
-      40% { transform: rotate(5deg) scale(1.05); }
-      70% { transform: rotate(-2deg) scale(1.02); }
-      100% { transform: rotate(0deg) scale(1); }
-    }
+
     /* Final result display */
     #dice-result-value { font-size: 42px; font-weight: 900; color: #fff; text-shadow: 0 0 16px rgba(233,69,96,0.6); line-height: 1; }
     #dice-result.nat-crit #dice-result-value { color: #ffd700; text-shadow: 0 0 20px rgba(255,215,0,0.8); }
@@ -599,19 +615,20 @@
       <div id="dice-3d-result"></div>
     </div>
 
-    <!-- Dice Result Display (with rolling animation) -->
+    <!-- Dice Result Display (with 3D rolling animation) -->
     <div id="dice-result">
       <div id="dice-result-label"></div>
       <div id="dice-rolling">
-        <div class="dice-icon">
-          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            <polygon points="50,5 95,30 95,70 50,95 5,70 5,30" fill="none" stroke="#e94560" stroke-width="3" opacity="0.8"/>
-            <polygon points="50,5 95,30 50,50 5,30" fill="none" stroke="#e94560" stroke-width="2" opacity="0.4"/>
-            <line x1="50" y1="50" x2="50" y2="95" stroke="#e94560" stroke-width="2" opacity="0.3"/>
-            <line x1="50" y1="50" x2="95" y2="70" stroke="#e94560" stroke-width="2" opacity="0.3"/>
-            <line x1="50" y1="50" x2="5" y2="70" stroke="#e94560" stroke-width="2" opacity="0.3"/>
-          </svg>
-          <div class="dice-numbers" id="dice-rolling-numbers">20</div>
+        <div class="dice-shadow"></div>
+        <div class="dice-stage">
+          <div class="dice-cube">
+            <div class="dice-face" id="dice-f1">20</div>
+            <div class="dice-face" id="dice-f2">7</div>
+            <div class="dice-face" id="dice-f3">14</div>
+            <div class="dice-face" id="dice-f4">3</div>
+            <div class="dice-face" id="dice-f5">11</div>
+            <div class="dice-face" id="dice-f6">18</div>
+          </div>
         </div>
       </div>
       <div id="dice-result-value"></div>
