@@ -291,16 +291,45 @@
     .nat-fail #dice-3d-result .dice-total { color: #e94560; text-shadow: 0 0 24px rgba(233,69,96,0.8); }
     .nat-fail #dice-3d-result .dice-extra { color: #e94560; }
 
-    /* ═══ DICE RESULT (fallback) ═══ */
-    #dice-result { display: none; width: 100%; max-width: 500px; padding: 12px; background: linear-gradient(180deg, #1a102e, #0d0d1a); border: 2px solid #e94560; border-radius: 12px; margin-top: 6px; text-align: center; animation: dice-pop 0.4s cubic-bezier(0.34,1.56,0.64,1); }
-    #dice-result.visible { display: block; }
+    /* ═══ DICE RESULT (with rolling animation) ═══ */
+    #dice-result { display: none; width: 100%; max-width: 500px; padding: 16px; background: linear-gradient(180deg, #1a102e, #0d0d1a); border: 2px solid #e94560; border-radius: 12px; margin-top: 6px; text-align: center; }
+    #dice-result.visible { display: block; animation: dice-pop 0.3s cubic-bezier(0.34,1.56,0.64,1); }
     #dice-result.nat-crit { border-color: #ffd700; box-shadow: 0 0 24px rgba(255,215,0,0.5); }
     #dice-result.nat-fail { border-color: #e94560; box-shadow: 0 0 24px rgba(233,69,96,0.5); }
-    #dice-result-label { font-size: 10px; color: #8899aa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    #dice-result-label { font-size: 10px; color: #8899aa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    /* Rolling dice icon */
+    #dice-rolling { display: none; margin: 12px auto; }
+    #dice-result.rolling #dice-rolling { display: block; }
+    #dice-result.rolling #dice-result-value,
+    #dice-result.rolling #dice-result-detail { display: none; }
+    .dice-icon { width: 64px; height: 64px; margin: 0 auto; position: relative; animation: dice-tumble 0.6s ease-in-out infinite; }
+    .dice-icon svg { width: 100%; height: 100%; filter: drop-shadow(0 0 12px rgba(233,69,96,0.6)); }
+    .dice-numbers { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 900; color: #fff; text-shadow: 0 0 8px rgba(233,69,96,0.8); animation: dice-number-spin 0.15s steps(1) infinite; }
+    @keyframes dice-tumble {
+      0% { transform: rotate(0deg) scale(1); }
+      25% { transform: rotate(15deg) scale(1.1); }
+      50% { transform: rotate(0deg) scale(1); }
+      75% { transform: rotate(-15deg) scale(1.1); }
+      100% { transform: rotate(0deg) scale(1); }
+    }
+    @keyframes dice-number-spin {
+      0% { content: ""; } 10% { content: ""; } 20% { content: ""; }
+      30% { content: ""; } 40% { content: ""; } 50% { content: ""; }
+      60% { content: ""; } 70% { content: ""; } 80% { content: ""; }
+      90% { content: ""; } 100% { content: ""; }
+    }
+    @keyframes dice-settle {
+      0% { transform: rotate(-10deg) scale(1.15); }
+      40% { transform: rotate(5deg) scale(1.05); }
+      70% { transform: rotate(-2deg) scale(1.02); }
+      100% { transform: rotate(0deg) scale(1); }
+    }
+    /* Final result display */
     #dice-result-value { font-size: 42px; font-weight: 900; color: #fff; text-shadow: 0 0 16px rgba(233,69,96,0.6); line-height: 1; }
     #dice-result.nat-crit #dice-result-value { color: #ffd700; text-shadow: 0 0 20px rgba(255,215,0,0.8); }
     #dice-result.nat-fail #dice-result-value { color: #e94560; text-shadow: 0 0 20px rgba(233,69,96,0.8); }
     #dice-result-detail { font-size: 12px; color: #b0a0c8; margin-top: 4px; }
+    #dice-result.show-result #dice-result-value { animation: dice-pop 0.4s cubic-bezier(0.34,1.56,0.64,1); }
     @keyframes dice-pop { 0%{transform:scale(0.3);opacity:0} 100%{transform:scale(1);opacity:1} }
 
     /* ═══ LINK PANEL ═══ */
@@ -570,9 +599,21 @@
       <div id="dice-3d-result"></div>
     </div>
 
-    <!-- Dice Result Display (fallback / quick result) -->
+    <!-- Dice Result Display (with rolling animation) -->
     <div id="dice-result">
       <div id="dice-result-label"></div>
+      <div id="dice-rolling">
+        <div class="dice-icon">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <polygon points="50,5 95,30 95,70 50,95 5,70 5,30" fill="none" stroke="#e94560" stroke-width="3" opacity="0.8"/>
+            <polygon points="50,5 95,30 50,50 5,30" fill="none" stroke="#e94560" stroke-width="2" opacity="0.4"/>
+            <line x1="50" y1="50" x2="50" y2="95" stroke="#e94560" stroke-width="2" opacity="0.3"/>
+            <line x1="50" y1="50" x2="95" y2="70" stroke="#e94560" stroke-width="2" opacity="0.3"/>
+            <line x1="50" y1="50" x2="5" y2="70" stroke="#e94560" stroke-width="2" opacity="0.3"/>
+          </svg>
+          <div class="dice-numbers" id="dice-rolling-numbers">20</div>
+        </div>
+      </div>
       <div id="dice-result-value"></div>
       <div id="dice-result-detail"></div>
     </div>

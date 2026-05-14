@@ -1762,25 +1762,52 @@ function rollDiceValues(notation) {
   return { diceTotal, sides, diceCount, isSingleD20 };
 }
 
+const diceRollingNumbers = document.getElementById("dice-rolling-numbers");
+let diceRollingInterval = null;
+
 function showDiceResultDisplay(label, result) {
   const { diceTotal, modifier, finalTotal, natValue } = result;
   const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
   const detail = modifier !== 0 ? `${diceTotal}${modStr} = ${finalTotal}` : `${diceTotal}`;
 
+  // Phase 1: Show rolling animation
   diceResultLabel.textContent = label || "";
-  let extraText = "";
-  diceResultEl.className = "";
-  if (natValue === 20) { diceResultEl.classList.add("nat-crit"); extraText = " NAT 20!"; }
-  else if (natValue === 1) { diceResultEl.classList.add("nat-fail"); extraText = " NAT 1"; }
+  diceResultValue.textContent = "";
+  diceResultDetail.textContent = "";
+  diceResultEl.className = "visible rolling";
 
-  diceResultValue.textContent = finalTotal;
-  diceResultDetail.textContent = detail + extraText;
-  diceResultEl.classList.add("visible");
+  // Animate random numbers on the dice
+  clearInterval(diceRollingInterval);
+  diceRollingInterval = setInterval(() => {
+    diceRollingNumbers.textContent = Math.floor(Math.random() * 20) + 1;
+  }, 80);
 
-  clearTimeout(diceResultEl._hideTimer);
-  diceResultEl._hideTimer = setTimeout(() => {
-    diceResultEl.classList.remove("visible", "nat-crit", "nat-fail");
-  }, 2500);
+  // Phase 2: After rolling, show result
+  clearTimeout(diceResultEl._rollTimer);
+  diceResultEl._rollTimer = setTimeout(() => {
+    clearInterval(diceRollingInterval);
+
+    // Show final result
+    diceResultEl.classList.remove("rolling");
+    diceResultEl.classList.add("show-result");
+    if (natValue === 20) diceResultEl.classList.add("nat-crit");
+    else if (natValue === 1) diceResultEl.classList.add("nat-fail");
+
+    let extraText = "";
+    if (natValue === 20) extraText = " NAT 20!";
+    else if (natValue === 1) extraText = " NAT 1";
+
+    diceResultValue.textContent = finalTotal;
+    diceResultDetail.textContent = detail + extraText;
+
+    playSfx("dice-hit");
+
+    // Auto-hide after showing result
+    clearTimeout(diceResultEl._hideTimer);
+    diceResultEl._hideTimer = setTimeout(() => {
+      diceResultEl.className = "";
+    }, 2500);
+  }, 1200); // 1.2 seconds of rolling
 }
 
 function show3DResult(label, result) {
@@ -1844,7 +1871,7 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
       playSfx("dice-hit");
     }
   } else {
-    playSfx("dice-hit");
+    // sfx will play after rolling animation in showDiceResultDisplay
   }
 
   const finalTotal = diceTotal + modifier;
@@ -1876,8 +1903,8 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
     : `Rolled ${notation}${modStr}: ${finalTotal}`;
   OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
 
-  // Dramatic pause
-  await new Promise((r) => setTimeout(r, used3D ? 1500 : 1000));
+  // Dramatic pause (longer for fallback to let rolling animation + result display finish)
+  await new Promise((r) => setTimeout(r, used3D ? 1500 : 3800));
 
 
   // Auto-hide 3D overlay
