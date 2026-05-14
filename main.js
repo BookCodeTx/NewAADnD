@@ -124,9 +124,7 @@ const COMBAT_LOG_CHANNEL = "com.dnd-hotbar/combat-log";
 
 // ── OBR Dice Extension Integration ──
 // Listen for rolls from the official OBR dice extension (rodeo.owlbear.dice)
-const OBR_DICE_ROLL_KEY = "rodeo.owlbear.dice/roll";
 const OBR_DICE_VALUES_KEY = "rodeo.owlbear.dice/rollValues";
-let pendingObrRoll = null;  // { label, modifier, notation, resolve }
 let lastObrRollTimestamp = 0;
 
 // ── Error helpers ──
@@ -1542,39 +1540,17 @@ OBR.onReady(async () => {
     setTimeout(() => { floaterModalOpen = false; }, 2500);
   });
 
-  // ── Listen for OBR Dice Extension rolls ──
-  // When a player rolls using the official OBR dice roller, we capture the result
+  // ── Snapshot OBR Dice metadata for change detection ──
   try {
-    // Get initial timestamp to ignore old rolls
-    const myMeta = await OBR.player.getMetadata();
+    const meta = await OBR.player.getMetadata();
     lastObrRollTimestamp = Date.now();
-
-    OBR.player.onChange(async (player) => {
-      // Only process if we're waiting for a roll
-      if (!pendingObrRoll) return;
-
-      const rollValues = player?.metadata?.[OBR_DICE_VALUES_KEY];
-      const roll = player?.metadata?.[OBR_DICE_ROLL_KEY];
-      if (!rollValues || !Array.isArray(rollValues) || rollValues.length === 0) return;
-
-      // Check timestamp to avoid processing old/same rolls
-      const rollTime = Date.now();
-      if (rollTime - lastObrRollTimestamp < 500) return; // debounce
-      lastObrRollTimestamp = rollTime;
-
-      // Sum up the dice values
-      const diceTotal = rollValues.reduce((sum, v) => sum + (typeof v === "number" ? v : 0), 0);
-      if (diceTotal <= 0) return;
-
-      console.log("[obr-dice] Detected OBR dice roll:", rollValues, "total:", diceTotal);
-
-      // Resolve the pending roll
-      const pending = pendingObrRoll;
-      pendingObrRoll = null;
-      pending.resolve(diceTotal);
-    });
+    // Store initial roll values so we can detect changes
+    const initVals = meta?.[OBR_DICE_VALUES_KEY];
+    window._lastObrDiceValues = initVals ? JSON.stringify(initVals) : "";
+    console.log("[obr-dice] Initial dice state captured");
   } catch (err) {
-    console.warn("[obr-dice] Failed to set up OBR dice listener:", err.message);
+    console.warn("[obr-dice] Could not read initial dice state:", err.message);
+    window._lastObrDiceValues = "";
   }
 
   // Render initial initiative state
@@ -1972,61 +1948,74 @@ function show3DResult(label, result) {
   dice3dResult.classList.add("visible");
 }
 
-// ── Wait for OBR Dice Extension roll (with timeout + skip button) ──
+// ── Wait for OBR Dice Extension roll (polling + skip button) ──
 async function waitForObrDice(notation, label, modifier) {
   return new Promise((resolve) => {
-    // Show a "waiting for OBR dice" prompt
     const modStr = modifier > 0 ? `+${modifier}` : modifier < 0 ? `${modifier}` : "";
+
+    // Show waiting prompt
     diceResultLabel.textContent = label || "";
-    diceResultValue.textContent = "";
-    diceResultDetail.innerHTML = `<div style="color:#e9a045;font-size:11px;margin-top:4px;">🎲 ทอยเต๋าใน OBR หรือกด Skip เพื่อทอยอัตโนมัติ</div><div style="color:#8899aa;font-size:10px;margin-top:2px;">${notation}${modStr}</div>`;
+    diceResultValue.textContent = "🎲";
+    diceResultDetail.innerHTML = `
+      <div style="color:#e9a045;font-size:12px;margin-top:6px;font-weight:600;">ทอยเต๋าใน Owlbear Rodeo</div>
+      <div style="color:#8899aa;font-size:10px;margin-top:2px;">${notation}${modStr}</div>
+    `;
     diceResultEl.className = "visible";
 
-    // Show skip button
+    // Skip button
     let skipBtn = document.getElementById("obr-dice-skip");
     if (!skipBtn) {
       skipBtn = document.createElement("button");
       skipBtn.id = "obr-dice-skip";
-      skipBtn.textContent = "⏩ Skip — ทอยอัตโนมัติ";
-      skipBtn.style.cssText = "margin-top:8px;padding:6px 16px;border:1px solid #e9a045;border-radius:6px;background:#1a1008;color:#e9a045;font-size:11px;font-weight:600;cursor:pointer;transition:all 0.15s;";
-      skipBtn.addEventListener("mouseenter", () => { skipBtn.style.background = "#2a1a08"; });
-      skipBtn.addEventListener("mouseleave", () => { skipBtn.style.background = "#1a1008"; });
       diceResultEl.appendChild(skipBtn);
     }
-    skipBtn.style.display = "inline-block";
+    skipBtn.textContent = "⏩ Skip — ทอยในตัว";
+    skipBtn.style.cssText = "display:inline-block;margin-top:10px;padding:8px 20px;border:2px solid #e9a045;border-radius:8px;background:#1a1008;color:#e9a045;font-size:12px;font-weight:700;cursor:pointer;transition:all 0.15s;";
 
     let resolved = false;
+    let pollTimer = null;
 
     function cleanup() {
       if (resolved) return;
       resolved = true;
-      pendingObrRoll = null;
+      if (pollTimer) clearInterval(pollTimer);
       skipBtn.style.display = "none";
       diceResultEl.className = "";
     }
 
-    // Skip button — fall through to built-in dice
-    skipBtn.onclick = () => {
-      cleanup();
-      resolve(null);
-    };
+    // Skip → use built-in dice
+    skipBtn.onclick = () => { cleanup(); resolve(null); };
 
-    // Set up OBR dice listener
-    pendingObrRoll = {
-      label, modifier, notation,
-      resolve: (diceTotal) => {
-        cleanup();
-        resolve(diceTotal);
-      },
-    };
+    // ── Poll OBR player metadata for dice changes ──
+    const startSnapshot = window._lastObrDiceValues || "";
 
-    // Auto-timeout after 15 seconds — fall back to built-in
-    setTimeout(() => {
-      if (!resolved) {
-        cleanup();
-        resolve(null);
+    pollTimer = setInterval(async () => {
+      if (resolved) { clearInterval(pollTimer); return; }
+      try {
+        const meta = await OBR.player.getMetadata();
+        const rollValues = meta?.[OBR_DICE_VALUES_KEY];
+        if (!rollValues || !Array.isArray(rollValues) || rollValues.length === 0) return;
+
+        const currentSnapshot = JSON.stringify(rollValues);
+        // Check if values changed from when we started waiting
+        if (currentSnapshot !== startSnapshot) {
+          const diceTotal = rollValues.reduce((sum, v) => sum + (typeof v === "number" ? v : 0), 0);
+          if (diceTotal > 0) {
+            console.log("[obr-dice] Detected roll:", rollValues, "→", diceTotal);
+            window._lastObrDiceValues = currentSnapshot;
+            cleanup();
+            resolve(diceTotal);
+          }
+        }
+      } catch (err) {
+        // Ignore polling errors
       }
-    }, 15000);
+    }, 400);
+
+    // Auto-timeout 12 seconds → fall back
+    setTimeout(() => {
+      if (!resolved) { cleanup(); resolve(null); }
+    }, 12000);
   });
 }
 
