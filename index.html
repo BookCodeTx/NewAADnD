@@ -252,6 +252,8 @@
     /* ═══ HP EDITOR ═══ */
     .stat-chip.hp { cursor: pointer; transition: transform 0.1s; }
     .stat-chip.hp:hover { transform: scale(1.05); box-shadow: 0 0 8px rgba(233,69,96,0.5); }
+    .stat-chip.ac { cursor: pointer; transition: transform 0.1s; }
+    .stat-chip.ac:hover { transform: scale(1.05); box-shadow: 0 0 8px rgba(69,160,233,0.5); }
     #hp-editor { display: none; width: 100%; max-width: 500px; padding: 10px; background: linear-gradient(180deg, #2a1020, #1a0d18); border: 2px solid #e94560; border-radius: 10px; margin-top: 6px; }
     #hp-editor.visible { display: block; }
     .hp-editor-title { color: #e94560; font-size: 11px; font-weight: 700; text-align: center; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
@@ -272,6 +274,27 @@
     .hp-btn-close:hover { background: #e9456022; }
     .hp-editor-current { text-align: center; color: #fff; font-size: 14px; font-weight: 700; margin-bottom: 8px; }
     .hp-editor-current .max-val { color: #8899aa; font-weight: 400; }
+
+    /* ═══ AC EDITOR ═══ */
+    #ac-editor { display: none; width: 100%; max-width: 500px; padding: 10px; background: linear-gradient(180deg, #101a2a, #0d1828); border: 2px solid #45a0e9; border-radius: 10px; margin-top: 6px; }
+    #ac-editor.visible { display: block; }
+    .ac-editor-title { color: #45a0e9; font-size: 11px; font-weight: 700; text-align: center; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .ac-editor-current { text-align: center; color: #fff; font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .ac-editor-current .ac-base { color: #8899aa; font-size: 11px; font-weight: 400; }
+    .ac-editor-row { display: flex; gap: 6px; align-items: center; justify-content: center; margin-bottom: 6px; }
+    .ac-editor-row label { color: #c0c8d4; font-size: 10px; min-width: 50px; }
+    .ac-editor-row input { width: 60px; padding: 4px 8px; background: #0f1828; border: 1px solid #1a3a6e; border-radius: 4px; color: #fff; font-size: 14px; font-weight: 700; outline: none; text-align: center; }
+    .ac-editor-row input:focus { border-color: #45a0e9; }
+    .ac-adj-btn { width: 36px; height: 36px; border: 2px solid #45a0e9; border-radius: 8px; background: #0f1828; color: #45a0e9; font-size: 18px; font-weight: 700; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; }
+    .ac-adj-btn:hover { background: #1a2a4e; border-color: #55b0f9; color: #55b0f9; }
+    .ac-adj-btn:active { transform: scale(0.95); }
+    .ac-display { font-size: 32px; font-weight: 900; color: #45a0e9; min-width: 60px; text-align: center; text-shadow: 0 0 12px rgba(69,160,233,0.4); }
+    .ac-btn-set { padding: 4px 12px; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; background: #45a0e9; color: #fff; transition: background 0.15s; }
+    .ac-btn-set:hover { background: #3590d9; }
+    .ac-btn-reset { padding: 4px 12px; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; background: #e9a045; color: #0d0d1a; transition: background 0.15s; }
+    .ac-btn-reset:hover { background: #d49035; }
+    .ac-btn-close { width: 100%; margin-top: 4px; padding: 4px; border: 1px solid #45a0e944; border-radius: 4px; background: none; color: #45a0e9; font-size: 10px; cursor: pointer; }
+    .ac-btn-close:hover { background: #45a0e922; }
 
     /* ═══ 3D DICE OVERLAY ═══ */
     #dice-overlay { display: none; position: relative; width: 100%; max-width: 500px; height: 280px; margin-top: 6px; border-radius: 12px; overflow: hidden; border: 2px solid #e94560; background: radial-gradient(ellipse at center, #1a102e 0%, #0d0d1a 100%); }
@@ -571,6 +594,24 @@
         <button class="hp-btn-heal" id="hp-btn-temp">Set Temp</button>
       </div>
       <button class="hp-btn-close" id="hp-btn-close">Close</button>
+    </div>
+
+    <!-- AC Editor -->
+    <div id="ac-editor">
+      <div class="ac-editor-title">🛡️ Edit AC</div>
+      <div class="ac-editor-current" id="ac-editor-current"></div>
+      <div class="ac-editor-row" style="justify-content:center;gap:12px;">
+        <button class="ac-adj-btn" id="ac-btn-minus">−</button>
+        <div class="ac-display" id="ac-display">10</div>
+        <button class="ac-adj-btn" id="ac-btn-plus">+</button>
+      </div>
+      <div class="ac-editor-row">
+        <label>Set AC:</label>
+        <input type="number" id="ac-set-input" placeholder="AC" />
+        <button class="ac-btn-set" id="ac-btn-set">Set</button>
+        <button class="ac-btn-reset" id="ac-btn-reset">Reset</button>
+      </div>
+      <button class="ac-btn-close" id="ac-btn-close">Close</button>
     </div>
 
     <!-- 3D Dice Container -->

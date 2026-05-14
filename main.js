@@ -82,6 +82,12 @@ const hpSetInput = document.getElementById("hp-set");
 const hpMaxInput = document.getElementById("hp-max");
 const hpTempInput = document.getElementById("hp-temp");
 
+// AC Editor
+const acEditor = document.getElementById("ac-editor");
+const acEditorCurrent = document.getElementById("ac-editor-current");
+const acDisplay = document.getElementById("ac-display");
+const acSetInput = document.getElementById("ac-set-input");
+
 // Initiative
 const initiativeBar = document.getElementById("initiative-bar");
 const initTrack = document.getElementById("init-track");
@@ -114,6 +120,7 @@ let floaterModalOpen = false;
 const FLOATER_CHANNEL = "com.dnd-hotbar/floater";
 const FLOATER_MODAL_ID = "com.dnd-hotbar/floater-modal";
 const SFX_CHANNEL = "com.dnd-hotbar/sfx";
+const COMBAT_LOG_CHANNEL = "com.dnd-hotbar/combat-log";
 
 // ── Error helpers ──
 function showError(title, hint) { errorTitleText.textContent = title; errorHintText.textContent = hint || ""; errorBanner.classList.add("visible"); }
@@ -121,13 +128,19 @@ function hideError() { errorBanner.classList.remove("visible"); }
 errorDismiss.addEventListener("click", hideError);
 
 // ── Combat log ──
-function logCombat(html, type = "info") {
+function addLogEntry(html, type = "info") {
   const entry = document.createElement("div");
   entry.className = `log-entry log-${type}`;
   entry.innerHTML = html;
   combatLog.prepend(entry);
   combatLog.classList.remove("hidden");
-  while (combatLog.children.length > 20) combatLog.removeChild(combatLog.lastChild);
+  while (combatLog.children.length > 30) combatLog.removeChild(combatLog.lastChild);
+}
+
+function logCombat(html, type = "info") {
+  addLogEntry(html, type);
+  // Broadcast to all other players
+  OBR.broadcast.sendMessage(COMBAT_LOG_CHANNEL, { html, type }).catch(() => {});
 }
 
 // ── Combat overlay ──
@@ -889,6 +902,98 @@ document.getElementById("hp-btn-close").addEventListener("click", () => {
 });
 
 // ════════════════════════════════════════
+// AC EDITOR (manual GM control)
+// ════════════════════════════════════════
+
+let acOriginal = null; // Store original AC from character data for reset
+
+function openAcEditor() {
+  if (!currentCharData) return;
+  acOriginal = currentCharData.ac;
+  refreshAcEditor();
+  acEditor.classList.add("visible");
+  hpEditor.classList.remove("visible"); // Close HP editor if open
+}
+
+function refreshAcEditor() {
+  if (!currentCharData) return;
+  acDisplay.textContent = currentCharData.ac;
+  acEditorCurrent.innerHTML = `AC: <strong>${currentCharData.ac}</strong>${acOriginal !== null && acOriginal !== currentCharData.ac ? ` <span class="ac-base">(base: ${acOriginal})</span>` : ""}`;
+}
+
+async function applyAcChange(newAc) {
+  if (!currentTokenId || !currentCharData) return;
+  const oldAc = currentCharData.ac;
+  const finalAc = Math.max(0, newAc);
+
+  await OBR.scene.items.updateItems([currentTokenId], (items) => {
+    for (const item of items) {
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta?.character) return;
+      meta.character.ac = finalAc;
+      meta.lastUpdated = Date.now();
+    }
+  });
+
+  currentCharData.ac = finalAc;
+  showHotbar(currentCharData);
+  refreshAcEditor();
+  await syncInitiativeAC();
+
+  if (oldAc !== finalAc) {
+    logCombat(`🛡️ <strong>${currentCharData.name}</strong> AC: <strong>${oldAc}</strong> → <strong>${finalAc}</strong>`, "info");
+    await OBR.notification.show(`${currentCharData.name}: AC ${oldAc} → ${finalAc}`, "INFO");
+  }
+}
+
+async function syncInitiativeAC() {
+  const state = await getInitiativeState();
+  if (!state || !state.order.length) return;
+
+  const tokenIds = state.order.map((e) => e.tokenId);
+  const items = await OBR.scene.items.getItems(tokenIds);
+
+  let changed = false;
+  for (const entry of state.order) {
+    const item = items.find((i) => i.id === entry.tokenId);
+    const char = item?.metadata?.[METADATA_KEY]?.character;
+    if (char && entry.ac !== char.ac) {
+      entry.ac = char.ac;
+      changed = true;
+    }
+  }
+
+  if (changed) await setInitiativeState(state);
+}
+
+document.getElementById("ac-btn-plus").addEventListener("click", async () => {
+  if (!currentCharData) return;
+  await applyAcChange(currentCharData.ac + 1);
+});
+
+document.getElementById("ac-btn-minus").addEventListener("click", async () => {
+  if (!currentCharData) return;
+  await applyAcChange(currentCharData.ac - 1);
+});
+
+document.getElementById("ac-btn-set").addEventListener("click", async () => {
+  const val = parseInt(acSetInput.value);
+  if (isNaN(val)) return;
+  await applyAcChange(val);
+  acSetInput.value = "";
+});
+
+document.getElementById("ac-btn-reset").addEventListener("click", async () => {
+  if (acOriginal !== null) {
+    await applyAcChange(acOriginal);
+  }
+});
+
+document.getElementById("ac-btn-close").addEventListener("click", () => {
+  acEditor.classList.remove("visible");
+});
+
+// ════════════════════════════════════════
 // CONDITION SYSTEM
 // ════════════════════════════════════════
 
@@ -1416,6 +1521,12 @@ OBR.onReady(async () => {
   // Listen for SFX broadcasts from other players
   OBR.broadcast.onMessage(SFX_CHANNEL, (event) => {
     playSfx(event.data.sound);
+  });
+
+  // Listen for combat log broadcasts from other players
+  OBR.broadcast.onMessage(COMBAT_LOG_CHANNEL, (event) => {
+    // Only add locally — don't re-broadcast (addLogEntry doesn't broadcast)
+    addLogEntry(event.data.html, event.data.type);
   });
 
   // Track floater modal close
@@ -1952,9 +2063,16 @@ function showHotbar(char) {
     hpChip.addEventListener("click", openHpEditor);
     hpChip.title = "Click to edit HP";
   }
+
+  // Make AC chip clickable to open editor
+  const acChip = statsBar.querySelector(".stat-chip.ac");
+  if (acChip) {
+    acChip.addEventListener("click", openAcEditor);
+    acChip.title = "Click to edit AC";
+  }
 }
 
-function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("hidden"); conditionBar.classList.add("hidden"); hpEditor.classList.remove("visible"); tokenNameEl.textContent = ""; currentCharData = null; currentConditions = []; }
+function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("hidden"); conditionBar.classList.add("hidden"); hpEditor.classList.remove("visible"); acEditor.classList.remove("visible"); tokenNameEl.textContent = ""; currentCharData = null; currentConditions = []; }
 
 function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); currentTokenId = null; }
 
