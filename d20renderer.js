@@ -17,7 +17,6 @@ const VERTS = RAW_VERTS.map(([x, y, z]) => {
   return [x/len, y/len, z/len];
 });
 
-// 20 triangular faces
 const FACES = [
   [0,11,5], [0,5,1], [0,1,7], [0,7,10], [0,10,11],
   [1,5,9], [5,11,4], [11,10,2], [10,7,6], [7,1,8],
@@ -28,104 +27,76 @@ const FACES = [
 const FACE_NUMBERS = [20, 1, 18, 3, 16, 5, 14, 7, 12, 9, 2, 19, 4, 17, 6, 15, 8, 13, 10, 11];
 
 // ── Math helpers ──
-function rotateX(v, a) {
-  const c = Math.cos(a), s = Math.sin(a);
-  return [v[0], v[1]*c - v[2]*s, v[1]*s + v[2]*c];
-}
-function rotateY(v, a) {
-  const c = Math.cos(a), s = Math.sin(a);
-  return [v[0]*c + v[2]*s, v[1], -v[0]*s + v[2]*c];
-}
-function rotateZ(v, a) {
-  const c = Math.cos(a), s = Math.sin(a);
-  return [v[0]*c - v[1]*s, v[0]*s + v[1]*c, v[2]];
-}
-function cross(a, b) {
-  return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
-}
+function rotateX(v, a) { const c = Math.cos(a), s = Math.sin(a); return [v[0], v[1]*c - v[2]*s, v[1]*s + v[2]*c]; }
+function rotateY(v, a) { const c = Math.cos(a), s = Math.sin(a); return [v[0]*c + v[2]*s, v[1], -v[0]*s + v[2]*c]; }
+function rotateZ(v, a) { const c = Math.cos(a), s = Math.sin(a); return [v[0]*c - v[1]*s, v[0]*s + v[1]*c, v[2]]; }
+function cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
 function sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
 function dot(a, b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
-function normalize(v) {
-  const len = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
-  return len > 0 ? [v[0]/len, v[1]/len, v[2]/len] : [0,0,0];
-}
-function centroid(pts) {
-  const n = pts.length;
-  return [
-    pts.reduce((s,p) => s+p[0], 0)/n,
-    pts.reduce((s,p) => s+p[1], 0)/n,
-    pts.reduce((s,p) => s+p[2], 0)/n,
-  ];
-}
+function normalize(v) { const len = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]); return len > 0 ? [v[0]/len, v[1]/len, v[2]/len] : [0,0,0]; }
 
-// ── Color & lighting ──
 const LIGHT_DIR = normalize([0.3, 0.6, 1]);
-const BASE_COLOR = { r: 160, g: 110, b: 40 };       // Gold/copper base
-const SPECULAR_COLOR = { r: 255, g: 230, b: 150 };   // Bright gold specular
-const EDGE_COLOR = "rgba(255, 200, 100, 0.5)";
-const GLOW_COLOR = "rgba(255, 180, 60, 0.15)";
 
-// ── Particle system ──
-class Particle {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.vx = (Math.random() - 0.5) * 4;
-    this.vy = (Math.random() - 0.5) * 4 - 2;
-    this.life = 1.0;
-    this.decay = 0.02 + Math.random() * 0.03;
-    this.size = 1 + Math.random() * 3;
-    // Gold/orange/white color
-    const colorChoice = Math.random();
-    if (colorChoice < 0.3) {
-      this.color = { r: 255, g: 220, b: 80 };  // Gold
-    } else if (colorChoice < 0.6) {
-      this.color = { r: 255, g: 160, b: 40 };   // Orange
-    } else if (colorChoice < 0.85) {
-      this.color = { r: 255, g: 100, b: 30 };   // Fire
-    } else {
-      this.color = { r: 255, g: 255, b: 220 };  // White-hot
-    }
-  }
+// ── Particle pool ──
+const MAX_PARTICLES = 80;
+let particles = [];
 
-  update() {
-    this.x += this.vx;
-    this.y += this.vy;
-    this.vy += 0.05; // slight gravity
-    this.life -= this.decay;
-    this.size *= 0.98;
-  }
+function spawnParticle(x, y, vxMult, vyMult) {
+  if (particles.length >= MAX_PARTICLES) return;
+  const colorRoll = Math.random();
+  let r, g, b;
+  if (colorRoll < 0.3) { r = 255; g = 220; b = 80; }
+  else if (colorRoll < 0.6) { r = 255; g = 160; b = 40; }
+  else if (colorRoll < 0.85) { r = 255; g = 100; b = 30; }
+  else { r = 255; g = 255; b = 220; }
 
-  draw(ctx) {
-    if (this.life <= 0) return;
-    const alpha = this.life * 0.8;
+  particles.push({
+    x, y,
+    vx: (Math.random() - 0.5) * (vxMult || 4),
+    vy: (Math.random() - 0.5) * (vyMult || 4) - 1,
+    life: 1.0,
+    decay: 0.025 + Math.random() * 0.03,
+    size: 1 + Math.random() * 3,
+    r, g, b,
+  });
+}
+
+function updateAndDrawParticles(ctx) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.05;
+    p.life -= p.decay;
+    p.size *= 0.98;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+
+    const alpha = p.life * 0.8;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${alpha})`;
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${p.r},${p.g},${p.b},${alpha})`;
     ctx.fill();
 
-    // Glow around particle
-    if (this.size > 1.5) {
+    if (p.size > 1.5) {
       ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size * 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${alpha * 0.15})`;
+      ctx.arc(p.x, p.y, p.size * 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${p.r},${p.g},${p.b},${alpha * 0.12})`;
       ctx.fill();
     }
   }
 }
 
-// ── Renderer ──
-export function renderD20(canvas, rx, ry, rz, scale = 1, resultNumber = null, options = {}) {
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width;
-  const h = canvas.height;
-  const cx = options.offsetX ?? w / 2;
-  const cy = options.offsetY ?? h / 2;
+function spawnBurst(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    spawnParticle(x, y, 7, 7);
+  }
+}
+
+// ── Draw one d20 frame ──
+function drawD20(ctx, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
   const sz = (w * 0.28) * scale;
 
-  // Don't clear — caller handles clearing (for particles/trail effect)
-
-  // Transform all vertices
+  // Transform vertices
   const transformed = VERTS.map(v => {
     let p = rotateX(v, rx);
     p = rotateY(p, ry);
@@ -138,19 +109,24 @@ export function renderD20(canvas, rx, ry, rz, scale = 1, resultNumber = null, op
     const pts3d = face.map(vi => transformed[vi]);
     const pts2d = pts3d.map(p => [cx + p[0] * sz, cy - p[1] * sz]);
     const normal = normalize(cross(sub(pts3d[1], pts3d[0]), sub(pts3d[2], pts3d[0])));
-    const cen = centroid(pts3d);
-    const avgZ = cen[2];
+    const cen3d = [
+      (pts3d[0][0] + pts3d[1][0] + pts3d[2][0]) / 3,
+      (pts3d[0][1] + pts3d[1][1] + pts3d[2][1]) / 3,
+      (pts3d[0][2] + pts3d[1][2] + pts3d[2][2]) / 3,
+    ];
+
     const diffuse = Math.max(0, dot(normal, LIGHT_DIR));
-    const ambient = 0.3;
-    const brightness = ambient + diffuse * 0.7;
+    const ambient = 0.35;
+    const brightness = ambient + diffuse * 0.65;
+
     const reflect = [
       2 * normal[0] * dot(normal, LIGHT_DIR) - LIGHT_DIR[0],
       2 * normal[1] * dot(normal, LIGHT_DIR) - LIGHT_DIR[1],
       2 * normal[2] * dot(normal, LIGHT_DIR) - LIGHT_DIR[2],
     ];
-    const spec = Math.pow(Math.max(0, dot(normalize(reflect), [0, 0, 1])), 24) * 0.7;
+    const spec = Math.pow(Math.max(0, dot(normalize(reflect), [0, 0, 1])), 20) * 0.8;
 
-    return { pts2d, pts3d, normal, avgZ, brightness, spec, number: FACE_NUMBERS[fi], cen, faceIdx: fi };
+    return { pts2d, normal, avgZ: cen3d[2], brightness, spec, number: FACE_NUMBERS[fi] };
   });
 
   // Swap result number onto front face
@@ -167,27 +143,29 @@ export function renderD20(canvas, rx, ry, rz, scale = 1, resultNumber = null, op
     }
   }
 
-  // Sort back to front
+  // Sort back to front (painter's algorithm)
   faceData.sort((a, b) => a.avgZ - b.avgZ);
 
-  // ── Outer glow behind dice ──
-  const glowRadius = sz * 1.6;
-  const glowGrad = ctx.createRadialGradient(cx, cy, sz * 0.3, cx, cy, glowRadius);
-  glowGrad.addColorStop(0, "rgba(255, 180, 60, 0.12)");
-  glowGrad.addColorStop(0.5, "rgba(255, 140, 30, 0.06)");
-  glowGrad.addColorStop(1, "transparent");
-  ctx.fillStyle = glowGrad;
-  ctx.fillRect(cx - glowRadius, cy - glowRadius, glowRadius * 2, glowRadius * 2);
+  // Glow behind dice
+  const glow = ctx.createRadialGradient(cx, cy, sz * 0.2, cx, cy, sz * 1.8);
+  glow.addColorStop(0, "rgba(255, 180, 60, 0.15)");
+  glow.addColorStop(0.6, "rgba(255, 130, 30, 0.06)");
+  glow.addColorStop(1, "transparent");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, sz * 1.8, 0, Math.PI * 2);
+  ctx.fill();
 
-  // ── Draw faces ──
+  // Draw faces
   for (const f of faceData) {
     if (f.normal[2] < -0.1) continue;
 
     const { pts2d, brightness, spec, number } = f;
 
-    const r = Math.min(255, Math.round(BASE_COLOR.r * brightness + SPECULAR_COLOR.r * spec));
-    const g = Math.min(255, Math.round(BASE_COLOR.g * brightness + SPECULAR_COLOR.g * spec));
-    const b = Math.min(255, Math.round(BASE_COLOR.b * brightness + SPECULAR_COLOR.b * spec));
+    // Gold/copper color with lighting
+    const r = Math.min(255, Math.round(180 * brightness + 255 * spec));
+    const g = Math.min(255, Math.round(130 * brightness + 230 * spec));
+    const b = Math.min(255, Math.round(50 * brightness + 150 * spec));
 
     ctx.beginPath();
     ctx.moveTo(pts2d[0][0], pts2d[0][1]);
@@ -199,25 +177,25 @@ export function renderD20(canvas, rx, ry, rz, scale = 1, resultNumber = null, op
     ctx.fill();
 
     // Golden edges
-    ctx.strokeStyle = EDGE_COLOR;
+    ctx.strokeStyle = "rgba(255, 210, 100, 0.6)";
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    // Number on face
+    // Number on visible faces
     if (f.normal[2] > 0.15) {
       const cenX = (pts2d[0][0] + pts2d[1][0] + pts2d[2][0]) / 3;
       const cenY = (pts2d[0][1] + pts2d[1][1] + pts2d[2][1]) / 3;
-      const fontSize = Math.round(12 * scale * (0.6 + f.normal[2] * 0.4));
+      const fontSize = Math.round(13 * scale * (0.6 + f.normal[2] * 0.4));
       const alpha = Math.min(1, f.normal[2] * 1.5);
 
       ctx.font = `bold ${fontSize}px 'Segoe UI', system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
-      // Dark text shadow for readability on gold
-      ctx.fillStyle = `rgba(40, 20, 0, ${alpha * 0.6})`;
+      // Dark shadow for readability
+      ctx.fillStyle = `rgba(40, 20, 0, ${alpha * 0.7})`;
       ctx.fillText(String(number), cenX + 1, cenY + 1);
-
+      // White number
       ctx.fillStyle = `rgba(255, 255, 240, ${alpha})`;
       ctx.fillText(String(number), cenX, cenY);
     }
@@ -229,227 +207,189 @@ export function renderD20(canvas, rx, ry, rz, scale = 1, resultNumber = null, op
 // ════════════════════════════════════════
 
 let animFrame = null;
-let particles = [];
 
-export function startD20Roll(canvas, duration = 2800, resultNumber = null, onDone = null) {
+export function startD20Roll(canvas, duration, resultNumber, onDone) {
   cancelAnimationFrame(animFrame);
+  animFrame = null;
   particles = [];
 
+  duration = duration || 2800;
+
   const ctx = canvas.getContext("2d");
+  if (!ctx) { if (onDone) onDone(); return; }
+
   const w = canvas.width;
   const h = canvas.height;
   const startTime = performance.now();
 
-  // Random spin axes
+  // Spin speeds
   const axisSpeed = {
     x: 5 + Math.random() * 4,
     y: 4 + Math.random() * 5,
     z: 3 + Math.random() * 3,
   };
 
-  // ── Physics for bouncing ──
-  const diceRadius = w * 0.28;
-  const margin = diceRadius * 0.7;
+  // Bouncing physics
+  const margin = w * 0.22;
+  let posX = w * 0.3 + Math.random() * w * 0.4;
+  let posY = h * 0.3 + Math.random() * h * 0.4;
+  let velX = (Math.random() > 0.5 ? 1 : -1) * (5 + Math.random() * 4);
+  let velY = (Math.random() > 0.5 ? 1 : -1) * (4 + Math.random() * 3);
 
-  // Start position: random side
-  let posX = margin + Math.random() * (w - margin * 2);
-  let posY = h * 0.3;
-
-  // Random initial velocity — fast!
-  const speed = 6 + Math.random() * 4;
-  const angle = Math.random() * Math.PI * 2;
-  let velX = Math.cos(angle) * speed;
-  let velY = Math.sin(angle) * speed;
-
-  // Bounce targets — pre-generate random bounce points for natural feel
-  const bounceCount = 4 + Math.floor(Math.random() * 3); // 4-6 bounces
-  const bounceTimes = [];
-  for (let i = 0; i < bounceCount; i++) {
-    bounceTimes.push((i + 1) / (bounceCount + 1));
+  // Pre-generate random direction change times
+  const dirChanges = [];
+  for (let i = 0; i < 5; i++) {
+    dirChanges.push(0.1 + (i * 0.15) + Math.random() * 0.05);
   }
+  let lastDirChange = -1;
 
-  let lastBounceT = 0;
+  let phase = "rolling"; // "rolling" → "settling" → "done"
+  let settleStart = 0;
   let flashAlpha = 0;
+  let finalRx = 0, finalRy = 0, finalRz = 0;
 
-  function frame(now) {
+  function tick(now) {
     const elapsed = now - startTime;
     const t = Math.min(1, elapsed / duration);
 
-    // ── Decay: fast → slow ──
-    const decay = 1 - Math.pow(t, 1.5); // Energy decay
-    const speedMult = Math.max(0.01, decay);
-
-    // ── Update position with bouncing ──
-    posX += velX * speedMult;
-    posY += velY * speedMult;
-
-    // Bounce off walls
-    if (posX < margin) { posX = margin; velX = Math.abs(velX) * (0.7 + Math.random() * 0.3); spawnBounceParticles(posX, posY); }
-    if (posX > w - margin) { posX = w - margin; velX = -Math.abs(velX) * (0.7 + Math.random() * 0.3); spawnBounceParticles(posX, posY); }
-    if (posY < margin) { posY = margin; velY = Math.abs(velY) * (0.7 + Math.random() * 0.3); spawnBounceParticles(posX, posY); }
-    if (posY > h - margin) { posY = h - margin; velY = -Math.abs(velY) * (0.7 + Math.random() * 0.3); spawnBounceParticles(posX, posY); }
-
-    // Random direction changes at bounce times for chaotic feel
-    for (let i = 0; i < bounceTimes.length; i++) {
-      if (t >= bounceTimes[i] && lastBounceT < bounceTimes[i]) {
-        const newAngle = Math.random() * Math.PI * 2;
-        const newSpeed = (4 + Math.random() * 3) * speedMult;
-        velX = Math.cos(newAngle) * newSpeed;
-        velY = Math.sin(newAngle) * newSpeed;
-        spawnBounceParticles(posX, posY);
-      }
-    }
-    lastBounceT = t;
-
-    // ── Settle toward center in last 25% ──
-    if (t > 0.75) {
-      const settleT = (t - 0.75) / 0.25;
-      const ease = settleT * settleT; // Accelerate toward center
-      posX += (w / 2 - posX) * ease * 0.15;
-      posY += (h / 2 - posY) * ease * 0.15;
-      velX *= 0.92;
-      velY *= 0.92;
-    }
-
-    // ── Rotation ──
-    const rotSpeed = speedMult * 8;
-    const rx = rotSpeed * axisSpeed.x + t * 2;
-    const ry = rotSpeed * axisSpeed.y + t * 3;
-    const rz = rotSpeed * axisSpeed.z + t * 1.5;
-
-    // ── Scale bounce effect ──
-    let scale;
-    if (t < 0.1) {
-      scale = 0.6 + 0.4 * (t / 0.1); // Pop in
-    } else {
-      scale = 1 + Math.sin(t * Math.PI * bounceCount * 2) * 0.08 * decay; // Wobble
-    }
-
-    // Show result in last 20%
-    const showResult = t > 0.8 ? resultNumber : null;
-
-    // ── Spawn trail particles while moving fast ──
-    if (speedMult > 0.15 && Math.random() < speedMult * 0.7) {
-      particles.push(new Particle(posX, posY));
-    }
-
-    // ── Update & draw particles ──
     ctx.clearRect(0, 0, w, h);
 
-    // Draw dark background with subtle radial gradient
-    const bgGrad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, w * 0.7);
-    bgGrad.addColorStop(0, "rgba(20, 15, 30, 0.3)");
-    bgGrad.addColorStop(1, "rgba(10, 8, 18, 0.5)");
-    ctx.fillStyle = bgGrad;
+    // Dark background
+    ctx.fillStyle = "#0d0a06";
     ctx.fillRect(0, 0, w, h);
 
-    // Particles behind dice
-    for (let i = particles.length - 1; i >= 0; i--) {
-      particles[i].update();
-      particles[i].draw(ctx);
-      if (particles[i].life <= 0) particles.splice(i, 1);
-    }
+    if (phase === "rolling") {
+      // ── Decay speed ──
+      const decay = 1 - t * t;
+      const speed = Math.max(0.02, decay);
 
-    // ── Flash effect on final settle ──
-    if (flashAlpha > 0) {
-      ctx.fillStyle = `rgba(255, 220, 100, ${flashAlpha})`;
+      // ── Move dice ──
+      posX += velX * speed;
+      posY += velY * speed;
+
+      // Bounce off walls
+      if (posX < margin) { posX = margin; velX = Math.abs(velX) * 0.85; spawnBurst(posX, posY, 6); }
+      if (posX > w - margin) { posX = w - margin; velX = -Math.abs(velX) * 0.85; spawnBurst(posX, posY, 6); }
+      if (posY < margin) { posY = margin; velY = Math.abs(velY) * 0.85; spawnBurst(posX, posY, 6); }
+      if (posY > h - margin) { posY = h - margin; velY = -Math.abs(velY) * 0.85; spawnBurst(posX, posY, 6); }
+
+      // Random direction changes
+      for (let i = 0; i < dirChanges.length; i++) {
+        if (t >= dirChanges[i] && lastDirChange < i) {
+          lastDirChange = i;
+          const ang = Math.random() * Math.PI * 2;
+          const spd = (3 + Math.random() * 4) * speed;
+          velX = Math.cos(ang) * spd;
+          velY = Math.sin(ang) * spd;
+          spawnBurst(posX, posY, 8);
+        }
+      }
+
+      // Settle toward center in last 25%
+      if (t > 0.75) {
+        const s = (t - 0.75) / 0.25;
+        posX += (w / 2 - posX) * s * 0.12;
+        posY += (h / 2 - posY) * s * 0.12;
+      }
+
+      // Rotation
+      const rotProgress = speed * 8;
+      finalRx = rotProgress * axisSpeed.x + t * 2;
+      finalRy = rotProgress * axisSpeed.y + t * 3;
+      finalRz = rotProgress * axisSpeed.z + t * 1.5;
+
+      // Scale wobble
+      const scale = t < 0.08 ? (0.5 + 0.5 * (t / 0.08)) : (1 + Math.sin(t * 20) * 0.06 * decay);
+
+      // Show result near end
+      const showResult = t > 0.82 ? resultNumber : null;
+
+      // Spawn trail particles
+      if (speed > 0.1 && Math.random() < speed * 0.6) {
+        spawnParticle(posX, posY, 3, 3);
+      }
+
+      // Draw particles
+      updateAndDrawParticles(ctx);
+
+      // Draw dice
+      drawD20(ctx, w, h, posX, posY, finalRx, finalRy, finalRz, scale, showResult);
+
+      if (t < 1) {
+        animFrame = requestAnimationFrame(tick);
+      } else {
+        // Transition to settling phase
+        phase = "settling";
+        settleStart = now;
+        flashAlpha = 0.5;
+        spawnBurst(w / 2, h / 2, 25);
+        animFrame = requestAnimationFrame(tick);
+      }
+
+    } else if (phase === "settling") {
+      const settleElapsed = now - settleStart;
+      const settleT = Math.min(1, settleElapsed / 600); // 600ms settle
+
+      // Flash fade
+      if (flashAlpha > 0.01) {
+        ctx.fillStyle = `rgba(255, 200, 80, ${flashAlpha})`;
+        ctx.fillRect(0, 0, w, h);
+        flashAlpha *= 0.88;
+      }
+
+      // Particles
+      updateAndDrawParticles(ctx);
+
+      // Dice at center, locked result
+      drawD20(ctx, w, h, w / 2, h / 2, finalRx, finalRy, finalRz, 1, resultNumber);
+
+      // Pulsing glow ring
+      const glowAlpha = 0.08 + Math.sin(settleElapsed * 0.008) * 0.03;
+      const ring = ctx.createRadialGradient(w/2, h/2, w * 0.1, w/2, h/2, w * 0.45);
+      ring.addColorStop(0, `rgba(255, 180, 60, ${glowAlpha})`);
+      ring.addColorStop(1, "transparent");
+      ctx.fillStyle = ring;
       ctx.fillRect(0, 0, w, h);
-      flashAlpha *= 0.9;
-    }
 
-    // ── Draw the d20 ──
-    renderD20(canvas, rx, ry, rz, scale, showResult, { offsetX: posX, offsetY: posY });
-
-    if (t < 1) {
-      animFrame = requestAnimationFrame(frame);
-    } else {
-      // ── Final frame: flash + settle ──
-      flashAlpha = 0.4;
-
-      // Burst of particles at final position
-      for (let i = 0; i < 20; i++) {
-        const p = new Particle(posX, posY);
-        p.vx = (Math.random() - 0.5) * 8;
-        p.vy = (Math.random() - 0.5) * 8;
-        p.size = 2 + Math.random() * 4;
-        p.decay = 0.015;
-        particles.push(p);
-      }
-
-      // Final settle animation (just particles fading + flash)
-      let settleFrames = 0;
-      function settleFrame() {
-        settleFrames++;
+      if (settleT < 1 || particles.length > 0) {
+        animFrame = requestAnimationFrame(tick);
+      } else {
+        // Final static frame
+        phase = "done";
         ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = "#0d0a06";
+        ctx.fillRect(0, 0, w, h);
+        drawD20(ctx, w, h, w / 2, h / 2, finalRx, finalRy, finalRz, 1, resultNumber);
 
-        // Background
-        ctx.fillStyle = bgGrad;
+        // Static glow
+        const finalGlow = ctx.createRadialGradient(w/2, h/2, w * 0.08, w/2, h/2, w * 0.4);
+        finalGlow.addColorStop(0, "rgba(255, 180, 60, 0.1)");
+        finalGlow.addColorStop(1, "transparent");
+        ctx.fillStyle = finalGlow;
         ctx.fillRect(0, 0, w, h);
 
-        // Particles
-        for (let i = particles.length - 1; i >= 0; i--) {
-          particles[i].update();
-          particles[i].draw(ctx);
-          if (particles[i].life <= 0) particles.splice(i, 1);
-        }
-
-        // Flash
-        if (flashAlpha > 0.005) {
-          ctx.fillStyle = `rgba(255, 220, 100, ${flashAlpha})`;
-          ctx.fillRect(0, 0, w, h);
-          flashAlpha *= 0.88;
-        }
-
-        // Final dice at center
-        renderD20(canvas, rx, ry, rz, 1, resultNumber, { offsetX: w/2, offsetY: h/2 });
-
-        // Steady glow ring around final dice
-        const glowPulse = 0.1 + Math.sin(settleFrames * 0.1) * 0.04;
-        const ringGrad = ctx.createRadialGradient(w/2, h/2, diceRadius * 0.5, w/2, h/2, diceRadius * 1.8);
-        ringGrad.addColorStop(0, `rgba(255, 180, 60, ${glowPulse})`);
-        ringGrad.addColorStop(0.6, `rgba(255, 140, 30, ${glowPulse * 0.4})`);
-        ringGrad.addColorStop(1, "transparent");
-        ctx.fillStyle = ringGrad;
-        ctx.fillRect(0, 0, w, h);
-
-        if (settleFrames < 30 || particles.length > 0) {
-          animFrame = requestAnimationFrame(settleFrame);
-        } else {
-          // Done — final static render with glow
-          ctx.clearRect(0, 0, w, h);
-          ctx.fillStyle = bgGrad;
-          ctx.fillRect(0, 0, w, h);
-          renderD20(canvas, rx, ry, rz, 1, resultNumber, { offsetX: w/2, offsetY: h/2 });
-
-          // Persistent glow
-          const finalGlow = ctx.createRadialGradient(w/2, h/2, diceRadius * 0.4, w/2, h/2, diceRadius * 1.5);
-          finalGlow.addColorStop(0, "rgba(255, 180, 60, 0.1)");
-          finalGlow.addColorStop(1, "transparent");
-          ctx.fillStyle = finalGlow;
-          ctx.fillRect(0, 0, w, h);
-
-          if (onDone) onDone();
-        }
+        if (onDone) onDone();
       }
-      animFrame = requestAnimationFrame(settleFrame);
     }
   }
 
-  function spawnBounceParticles(x, y) {
-    const count = 6 + Math.floor(Math.random() * 6);
-    for (let i = 0; i < count; i++) {
-      const p = new Particle(x, y);
-      p.vx = (Math.random() - 0.5) * 6;
-      p.vy = (Math.random() - 0.5) * 6;
-      p.size = 1.5 + Math.random() * 3;
-      particles.push(p);
-    }
-  }
-
-  animFrame = requestAnimationFrame(frame);
+  animFrame = requestAnimationFrame(tick);
 }
 
 export function stopD20Roll() {
   cancelAnimationFrame(animFrame);
+  animFrame = null;
   particles = [];
+}
+
+// Keep renderD20 export for compatibility (static render)
+export function renderD20(canvas, rx, ry, rz, scale, resultNumber) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#0d0a06";
+  ctx.fillRect(0, 0, w, h);
+  drawD20(ctx, w, h, w / 2, h / 2, rx, ry, rz, scale || 1, resultNumber);
 }
