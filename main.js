@@ -1887,7 +1887,7 @@ function showDiceResultDisplay(label, result) {
 
   const canvas = document.getElementById("d20-canvas");
   stopD20Roll();
-  startD20Roll(canvas, 2200, diceTotal, () => {
+  startD20Roll(canvas, 2800, diceTotal, () => {
     // Roll done — show result
     playSfx("dice-hit");
 
@@ -1996,7 +1996,7 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
   }
 
   // Dramatic pause — wait for dice animation to finish before showing notification
-  await new Promise((r) => setTimeout(r, used3D ? 1500 : 2600));
+  await new Promise((r) => setTimeout(r, used3D ? 1500 : 3200));
 
   // Broadcast SFX + notification AFTER dice finishes rolling
   const sfxName = natValue === 20 ? "crit" : natValue === 1 ? "miss" : "dice-hit";

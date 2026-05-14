@@ -315,18 +315,18 @@
     .nat-fail #dice-3d-result .dice-extra { color: #e94560; }
 
     /* ═══ DICE RESULT (with 3D Canvas D20) ═══ */
-    #dice-result { display: none; width: 100%; max-width: 500px; padding: 16px; background: linear-gradient(180deg, #1a102e, #0d0d1a); border: 2px solid #e94560; border-radius: 12px; margin-top: 6px; text-align: center; overflow: hidden; }
+    #dice-result { display: none; width: 100%; max-width: 500px; padding: 16px; background: linear-gradient(180deg, #1a1008, #0d0a06); border: 2px solid #b8860b; border-radius: 12px; margin-top: 6px; text-align: center; overflow: hidden; }
     #dice-result.visible { display: block; }
-    #dice-result.nat-crit { border-color: #ffd700; box-shadow: 0 0 24px rgba(255,215,0,0.5); }
+    #dice-result.nat-crit { border-color: #ffd700; box-shadow: 0 0 30px rgba(255,215,0,0.6), 0 0 60px rgba(255,180,0,0.2); }
     #dice-result.nat-fail { border-color: #e94560; box-shadow: 0 0 24px rgba(233,69,96,0.5); }
     #dice-result-label { font-size: 10px; color: #8899aa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
 
     /* ── 3D Canvas D20 ── */
-    #dice-rolling { display: none; height: 160px; position: relative; margin: 4px 0; }
+    #dice-rolling { display: none; height: 200px; position: relative; margin: 4px 0; }
     #dice-result.rolling #dice-rolling { display: flex; align-items: center; justify-content: center; }
     #dice-result.rolling #dice-result-value,
     #dice-result.rolling #dice-result-detail { display: none; }
-    #d20-canvas { image-rendering: auto; }
+    #d20-canvas { image-rendering: auto; background: transparent; }
 
     /* Final result display */
     #dice-result-value { font-size: 42px; font-weight: 900; color: #fff; text-shadow: 0 0 16px rgba(233,69,96,0.6); line-height: 1; }
@@ -625,7 +625,7 @@
     <div id="dice-result">
       <div id="dice-result-label"></div>
       <div id="dice-rolling">
-        <canvas id="d20-canvas" width="280" height="280" style="width:140px;height:140px;"></canvas>
+        <canvas id="d20-canvas" width="400" height="400" style="width:200px;height:200px;"></canvas>
       </div>
       <div id="dice-result-value"></div>
       <div id="dice-result-detail"></div>
