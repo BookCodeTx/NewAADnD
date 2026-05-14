@@ -122,10 +122,6 @@ const FLOATER_MODAL_ID = "com.dnd-hotbar/floater-modal";
 const SFX_CHANNEL = "com.dnd-hotbar/sfx";
 const COMBAT_LOG_CHANNEL = "com.dnd-hotbar/combat-log";
 
-// ── OBR Dice Extension Integration ──
-// Listen for rolls from the official OBR dice extension (rodeo.owlbear.dice)
-const OBR_DICE_VALUES_KEY = "rodeo.owlbear.dice/rollValues";
-let lastObrRollTimestamp = 0;
 
 // ── Error helpers ──
 function showError(title, hint) { errorTitleText.textContent = title; errorHintText.textContent = hint || ""; errorBanner.classList.add("visible"); }
@@ -1540,29 +1536,6 @@ OBR.onReady(async () => {
     setTimeout(() => { floaterModalOpen = false; }, 2500);
   });
 
-  // ── Snapshot OBR Dice metadata for change detection ──
-  try {
-    const meta = await OBR.player.getMetadata();
-    lastObrRollTimestamp = Date.now();
-    // Debug: log ALL metadata keys to find dice extension keys
-    const metaKeys = Object.keys(meta || {});
-    console.log("[obr-dice] Player metadata keys:", metaKeys);
-    console.log("[obr-dice] Full metadata:", JSON.stringify(meta).slice(0, 500));
-    // Store initial state
-    window._obrMetaSnapshot = JSON.stringify(meta || {});
-    window._lastObrDiceValues = "";
-    // Try to find dice-related keys
-    for (const key of metaKeys) {
-      if (key.toLowerCase().includes("dice") || key.toLowerCase().includes("roll")) {
-        console.log(`[obr-dice] Found dice key: "${key}" =`, meta[key]);
-      }
-    }
-  } catch (err) {
-    console.warn("[obr-dice] Could not read initial dice state:", err.message);
-    window._obrMetaSnapshot = "{}";
-    window._lastObrDiceValues = "";
-  }
-
   // Render initial initiative state
   const initState = await getInitiativeState();
   renderInitiative(initState);
@@ -1935,7 +1908,7 @@ function showDiceResultDisplay(label, result) {
       clearTimeout(diceResultEl._hideTimer);
       diceResultEl._hideTimer = setTimeout(() => {
         diceResultEl.className = "";
-      }, 3000);
+      }, 5000);
     }, 300);
   });
 }
@@ -1958,180 +1931,36 @@ function show3DResult(label, result) {
   dice3dResult.classList.add("visible");
 }
 
-// ── Wait for OBR Dice Extension roll (polling + skip button) ──
-async function waitForObrDice(notation, label, modifier) {
-  return new Promise((resolve) => {
-    const modStr = modifier > 0 ? `+${modifier}` : modifier < 0 ? `${modifier}` : "";
-
-    // Show waiting prompt
-    diceResultLabel.textContent = label || "";
-    diceResultValue.textContent = "🎲";
-    diceResultDetail.innerHTML = `
-      <div style="color:#e9a045;font-size:12px;margin-top:6px;font-weight:600;">ทอยเต๋าใน Owlbear Rodeo</div>
-      <div style="color:#8899aa;font-size:10px;margin-top:2px;">${notation}${modStr}</div>
-      <div id="obr-dice-debug" style="color:#555;font-size:8px;margin-top:4px;max-height:40px;overflow:hidden;"></div>
-    `;
-    diceResultEl.className = "visible";
-
-    // Skip button
-    let skipBtn = document.getElementById("obr-dice-skip");
-    if (!skipBtn) {
-      skipBtn = document.createElement("button");
-      skipBtn.id = "obr-dice-skip";
-      diceResultEl.appendChild(skipBtn);
-    }
-    skipBtn.textContent = "⏩ Skip — ทอยในตัว";
-    skipBtn.style.cssText = "display:inline-block;margin-top:10px;padding:8px 20px;border:2px solid #e9a045;border-radius:8px;background:#1a1008;color:#e9a045;font-size:12px;font-weight:700;cursor:pointer;transition:all 0.15s;";
-
-    let resolved = false;
-    let pollTimer = null;
-    const debugEl = document.getElementById("obr-dice-debug");
-
-    function cleanup() {
-      if (resolved) return;
-      resolved = true;
-      if (pollTimer) clearInterval(pollTimer);
-      skipBtn.style.display = "none";
-      diceResultEl.className = "";
-    }
-
-    // Skip → use built-in dice
-    skipBtn.onclick = () => { cleanup(); resolve(null); };
-
-    // Take full metadata snapshot at start
-    const startSnapshot = window._obrMetaSnapshot || "{}";
-
-    pollTimer = setInterval(async () => {
-      if (resolved) { clearInterval(pollTimer); return; }
-      try {
-        // ── Check player metadata ──
-        const meta = await OBR.player.getMetadata();
-        const currentFull = JSON.stringify(meta || {});
-
-        // Show what keys we see (debug)
-        const keys = Object.keys(meta || {});
-        if (debugEl) debugEl.textContent = `keys: ${keys.join(", ") || "(none)"}`;
-
-        // Check known dice key
-        const rollValues = meta?.[OBR_DICE_VALUES_KEY];
-        if (rollValues && Array.isArray(rollValues) && rollValues.length > 0) {
-          const snap = JSON.stringify(rollValues);
-          if (snap !== (window._lastObrDiceValues || "")) {
-            const total = rollValues.reduce((s, v) => s + (typeof v === "number" ? v : 0), 0);
-            if (total > 0) {
-              console.log("[obr-dice] Detected via known key:", rollValues, "→", total);
-              window._lastObrDiceValues = snap;
-              window._obrMetaSnapshot = currentFull;
-              cleanup();
-              resolve(total);
-              return;
-            }
-          }
-        }
-
-        // ── Scan ALL metadata for any changes that look like dice ──
-        if (currentFull !== startSnapshot) {
-          for (const key of keys) {
-            const val = meta[key];
-            // Look for arrays of numbers (dice values)
-            if (Array.isArray(val) && val.length > 0 && val.length <= 20 && val.every(v => typeof v === "number" && v >= 1 && v <= 100)) {
-              const prevMeta = JSON.parse(startSnapshot);
-              const prevVal = prevMeta[key];
-              if (JSON.stringify(val) !== JSON.stringify(prevVal)) {
-                const total = val.reduce((s, v) => s + v, 0);
-                console.log(`[obr-dice] Detected dice change in key "${key}":`, val, "→", total);
-                if (debugEl) debugEl.textContent = `Found: ${key} = [${val}]`;
-                window._obrMetaSnapshot = currentFull;
-                cleanup();
-                resolve(total);
-                return;
-              }
-            }
-            // Also check objects with value/values properties
-            if (val && typeof val === "object" && !Array.isArray(val)) {
-              const innerVals = val.values || val.value || val.results || val.rollValues;
-              if (Array.isArray(innerVals) && innerVals.length > 0) {
-                const prevMeta = JSON.parse(startSnapshot);
-                if (JSON.stringify(val) !== JSON.stringify(prevMeta[key])) {
-                  const nums = innerVals.filter(v => typeof v === "number");
-                  if (nums.length > 0) {
-                    const total = nums.reduce((s, v) => s + v, 0);
-                    console.log(`[obr-dice] Detected via "${key}":`, nums, "→", total);
-                    window._obrMetaSnapshot = currentFull;
-                    cleanup();
-                    resolve(total);
-                    return;
-                  }
-                }
-              }
-            }
-          }
-          // Metadata changed but no dice values found — update snapshot
-          window._obrMetaSnapshot = currentFull;
-        }
-
-        // ── Also check party metadata (other players) ──
-        // Not needed for own rolls, but just in case
-      } catch (err) {
-        if (debugEl) debugEl.textContent = `err: ${err.message}`;
-      }
-    }, 400);
-
-    // Auto-timeout 12 seconds → fall back
-    setTimeout(() => {
-      if (!resolved) { cleanup(); resolve(null); }
-    }, 12000);
-  });
-}
-
 async function rollDice(notation, label, modifier = 0, rollId = null) {
   const rid = rollId || crypto.randomUUID();
   pendingRollId = rid;
 
-  const { isSingleD20 } = rollDiceValues(notation);
-  let diceTotal = 0;
+  const { diceTotal: fallbackTotal, isSingleD20 } = rollDiceValues(notation);
+  let diceTotal = fallbackTotal;
   let used3D = false;
-  let usedObrDice = false;
 
   const charName = attackerData?.name || currentCharData?.name || "";
 
-  // ── Strategy 1: Wait for OBR Dice Extension (with timeout) ──
-  // Show "waiting" state so user knows to roll in OBR
-  const obrDiceResult = await waitForObrDice(notation, label, modifier);
+  // Try embedded 3D dice-box first
+  if (diceReady && diceBox) {
+    try {
+      diceOverlay.className = "visible";
+      dice3dLabel.textContent = label || notation;
+      dice3dResult.classList.remove("visible");
+      dice3dResult.innerHTML = "";
+      try { diceBox.clear(); } catch {}
 
-  if (obrDiceResult !== null) {
-    // OBR dice was used!
-    diceTotal = obrDiceResult;
-    usedObrDice = true;
-    playSfx("dice-hit");
-  } else {
-    // ── Strategy 2: Try embedded 3D dice-box ──
-    if (diceReady && diceBox) {
-      try {
-        diceOverlay.className = "visible";
-        dice3dLabel.textContent = label || notation;
-        dice3dResult.classList.remove("visible");
-        dice3dResult.innerHTML = "";
-        try { diceBox.clear(); } catch {}
-
-        const results = await Promise.race([
-          diceBox.roll(notation),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
-        ]);
-        diceTotal = results.reduce((sum, r) => sum + r.value, 0);
-        used3D = true;
-        playSfx("dice-hit");
-        await new Promise((r) => setTimeout(r, 600));
-      } catch (err) {
-        console.warn("[dice] 3D roll failed, using fallback:", err.message);
-        diceOverlay.className = "";
-      }
-    }
-
-    // ── Strategy 3: Built-in d20 fallback ──
-    if (!used3D) {
-      const { diceTotal: fallback } = rollDiceValues(notation);
-      diceTotal = fallback;
+      const results = await Promise.race([
+        diceBox.roll(notation),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+      ]);
+      diceTotal = results.reduce((sum, r) => sum + r.value, 0);
+      used3D = true;
+      playSfx("dice-hit");
+      await new Promise((r) => setTimeout(r, 600));
+    } catch (err) {
+      console.warn("[dice] 3D roll failed, using canvas d20:", err.message);
+      diceOverlay.className = "";
     }
   }
 
@@ -2148,15 +1977,12 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
   else if (natValue === 1) setTimeout(() => playSfx("miss"), 150);
 
   // Show result
-  if (usedObrDice) {
-    // OBR dice already showed the 3D roll, just show our result overlay
-    showDiceResultDisplay(label, result);
-    await new Promise((r) => setTimeout(r, 3200));
-  } else if (used3D) {
+  if (used3D) {
     show3DResult(label, result);
     await new Promise((r) => setTimeout(r, 1500));
   } else {
     showDiceResultDisplay(label, result);
+    // Wait for d20 animation (2.8s) + result display (5s)
     await new Promise((r) => setTimeout(r, 3200));
   }
 
@@ -2170,9 +1996,8 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
     : `Rolled ${notation}${modStr}: ${finalTotal}`;
   OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
 
-  // Wait for result display to finish
-  await new Promise((r) => setTimeout(r, usedObrDice || !used3D ? 3000 : 0));
-
+  // Wait for result to be visible for 5 seconds total
+  await new Promise((r) => setTimeout(r, !used3D ? 5000 : 0));
 
   // Auto-hide 3D overlay
   if (used3D) {
