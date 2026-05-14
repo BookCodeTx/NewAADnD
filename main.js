@@ -5,6 +5,7 @@ import { CONDITIONS, getConditionPenalty, shouldAutoFailSave } from "./condition
 import { playSfx } from "./sfx.js";
 import { playHitEffect, playCritEffect, playMissEffect, playHealEffect, playSpellEffect, screenShake, getDiceColor } from "./effects.js";
 import { parseCharacter } from "./server/parser.js";
+import { startD20Roll, stopD20Roll } from "./d20renderer.js";
 
 const METADATA_KEY = "com.dnd-hotbar/character";
 const INIT_METADATA_KEY = "com.dnd-hotbar/initiative";
@@ -1762,79 +1763,43 @@ function rollDiceValues(notation) {
   return { diceTotal, sides, diceCount, isSingleD20 };
 }
 
-let diceNumberInterval = null;
-
 function showDiceResultDisplay(label, result) {
   const { diceTotal, modifier, finalTotal, natValue } = result;
   const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
   const detail = modifier !== 0 ? `${diceTotal}${modStr} = ${finalTotal}` : `${diceTotal}`;
 
-  const d20Number = document.getElementById("d20-number");
-  const d20Container = document.getElementById("d20-container");
-
-  // Re-trigger CSS animations by cloning
-  const rolling = document.getElementById("dice-rolling");
-  const oldContainer = rolling.querySelector(".d20-container");
-  const newContainer = oldContainer.cloneNode(true);
-  newContainer.classList.add("rolling-active");
-  oldContainer.replaceWith(newContainer);
-
-  // Get fresh refs after clone
-  const freshNumber = newContainer.querySelector(".d20-number");
-
-  // Phase 1: Show rolling D20
+  // Phase 1: Show rolling 3D D20
   diceResultLabel.textContent = label || "";
   diceResultValue.textContent = "";
   diceResultDetail.textContent = "";
   diceResultEl.className = "visible rolling";
 
-  // Animate numbers on the d20 face — fast then slowing down
-  clearInterval(diceNumberInterval);
-  let speed = 60;
-  let elapsed = 0;
-  const maxDuration = 1800;
+  const canvas = document.getElementById("d20-canvas");
+  stopD20Roll();
 
-  function tickNumber() {
-    elapsed += speed;
-    if (elapsed >= maxDuration) {
-      // Show final result on dice
-      freshNumber.textContent = diceTotal;
-      clearInterval(diceNumberInterval);
-      return;
-    }
-    freshNumber.textContent = Math.floor(Math.random() * 20) + 1;
-    // Slow down gradually
-    speed = 60 + (elapsed / maxDuration) * 200;
-    clearInterval(diceNumberInterval);
-    diceNumberInterval = setInterval(tickNumber, speed);
-  }
-  diceNumberInterval = setInterval(tickNumber, speed);
-
-  // Phase 2: After roll, show result
-  clearTimeout(diceResultEl._rollTimer);
-  diceResultEl._rollTimer = setTimeout(() => {
-    clearInterval(diceNumberInterval);
-    newContainer.classList.remove("rolling-active");
-
-    diceResultEl.classList.remove("rolling");
-    diceResultEl.classList.add("show-result");
-    if (natValue === 20) diceResultEl.classList.add("nat-crit");
-    else if (natValue === 1) diceResultEl.classList.add("nat-fail");
-
-    let extraText = "";
-    if (natValue === 20) extraText = " NAT 20!";
-    else if (natValue === 1) extraText = " NAT 1";
-
-    diceResultValue.textContent = finalTotal;
-    diceResultDetail.textContent = detail + extraText;
-
+  startD20Roll(canvas, 2200, () => {
+    // Roll done — show result
     playSfx("dice-hit");
 
-    clearTimeout(diceResultEl._hideTimer);
-    diceResultEl._hideTimer = setTimeout(() => {
-      diceResultEl.className = "";
-    }, 2500);
-  }, 2100);
+    setTimeout(() => {
+      diceResultEl.classList.remove("rolling");
+      diceResultEl.classList.add("show-result");
+      if (natValue === 20) diceResultEl.classList.add("nat-crit");
+      else if (natValue === 1) diceResultEl.classList.add("nat-fail");
+
+      let extraText = "";
+      if (natValue === 20) extraText = " NAT 20!";
+      else if (natValue === 1) extraText = " NAT 1";
+
+      diceResultValue.textContent = finalTotal;
+      diceResultDetail.textContent = detail + extraText;
+
+      clearTimeout(diceResultEl._hideTimer);
+      diceResultEl._hideTimer = setTimeout(() => {
+        diceResultEl.className = "";
+      }, 2500);
+    }, 300);
+  });
 }
 
 function show3DResult(label, result) {
@@ -1930,8 +1895,8 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
     : `Rolled ${notation}${modStr}: ${finalTotal}`;
   OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
 
-  // Dramatic pause (longer for fallback: 2.1s roll + 2.5s result display)
-  await new Promise((r) => setTimeout(r, used3D ? 1500 : 4700));
+  // Dramatic pause (longer for fallback: 2.2s roll + 0.3s transition + 2.5s result)
+  await new Promise((r) => setTimeout(r, used3D ? 1500 : 5100));
 
 
   // Auto-hide 3D overlay
