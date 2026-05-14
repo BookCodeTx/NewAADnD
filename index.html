@@ -291,53 +291,96 @@
     .nat-fail #dice-3d-result .dice-total { color: #e94560; text-shadow: 0 0 24px rgba(233,69,96,0.8); }
     .nat-fail #dice-3d-result .dice-extra { color: #e94560; }
 
-    /* ═══ DICE RESULT (with 3D rolling animation) ═══ */
+    /* ═══ DICE RESULT (with D20 rolling animation) ═══ */
     #dice-result { display: none; width: 100%; max-width: 500px; padding: 16px; background: linear-gradient(180deg, #1a102e, #0d0d1a); border: 2px solid #e94560; border-radius: 12px; margin-top: 6px; text-align: center; overflow: hidden; }
     #dice-result.visible { display: block; }
     #dice-result.nat-crit { border-color: #ffd700; box-shadow: 0 0 24px rgba(255,215,0,0.5); }
     #dice-result.nat-fail { border-color: #e94560; box-shadow: 0 0 24px rgba(233,69,96,0.5); }
     #dice-result-label { font-size: 10px; color: #8899aa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
 
-    /* ── 3D Rolling Dice ── */
-    #dice-rolling { display: none; height: 120px; perspective: 400px; position: relative; margin: 8px 0; }
+    /* ── D20 Rolling Animation ── */
+    #dice-rolling { display: none; height: 130px; position: relative; margin: 4px 0; }
     #dice-result.rolling #dice-rolling { display: block; }
     #dice-result.rolling #dice-result-value,
     #dice-result.rolling #dice-result-detail { display: none; }
 
-    .dice-stage { width: 70px; height: 70px; position: absolute; left: 50%; top: 50%; margin-left: -35px; margin-top: -35px; transform-style: preserve-3d; animation: dice-roll 1.8s cubic-bezier(0.2, 0.8, 0.3, 1) forwards; }
-
-    .dice-cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; }
-
-    .dice-face { position: absolute; width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 900; color: #fff; border-radius: 10px; border: 2px solid rgba(233,69,96,0.6); backface-visibility: hidden; text-shadow: 0 0 8px rgba(233,69,96,0.6); }
-    .dice-face:nth-child(1) { background: linear-gradient(135deg, #2a1040, #1a0828); transform: rotateY(0deg) translateZ(35px); }
-    .dice-face:nth-child(2) { background: linear-gradient(135deg, #281038, #1a0828); transform: rotateY(90deg) translateZ(35px); }
-    .dice-face:nth-child(3) { background: linear-gradient(135deg, #261030, #1a0828); transform: rotateY(180deg) translateZ(35px); }
-    .dice-face:nth-child(4) { background: linear-gradient(135deg, #241028, #1a0828); transform: rotateY(-90deg) translateZ(35px); }
-    .dice-face:nth-child(5) { background: linear-gradient(135deg, #221020, #1a0828); transform: rotateX(90deg) translateZ(35px); }
-    .dice-face:nth-child(6) { background: linear-gradient(135deg, #201018, #1a0828); transform: rotateX(-90deg) translateZ(35px); }
-
-    /* Shadow under dice */
-    .dice-shadow { position: absolute; bottom: 10px; left: 50%; width: 50px; height: 12px; margin-left: -25px; background: radial-gradient(ellipse, rgba(0,0,0,0.5) 0%, transparent 70%); border-radius: 50%; animation: dice-shadow-anim 1.8s cubic-bezier(0.2, 0.8, 0.3, 1) forwards; }
-
-    @keyframes dice-roll {
-      0%   { transform: translate(-120px, -30px) rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
-      15%  { transform: translate(-60px, 10px) rotateX(270deg) rotateY(180deg) rotateZ(90deg); }
-      30%  { transform: translate(0px, -20px) rotateX(540deg) rotateY(360deg) rotateZ(180deg); }
-      45%  { transform: translate(40px, 10px) rotateX(720deg) rotateY(540deg) rotateZ(240deg); }
-      60%  { transform: translate(20px, -5px) rotateX(900deg) rotateY(630deg) rotateZ(300deg); }
-      75%  { transform: translate(5px, 5px) rotateX(1020deg) rotateY(690deg) rotateZ(340deg); }
-      90%  { transform: translate(-2px, 0px) rotateX(1070deg) rotateY(710deg) rotateZ(355deg); }
-      100% { transform: translate(0px, 0px) rotateX(1080deg) rotateY(720deg) rotateZ(360deg); }
+    .d20-container {
+      position: absolute; left: 50%; top: 50%;
+      width: 80px; height: 80px;
+      margin-left: -40px; margin-top: -40px;
+      will-change: transform;
+      animation: d20-bounce 2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     }
 
-    @keyframes dice-shadow-anim {
-      0%   { transform: scale(0.3); opacity: 0.2; }
-      15%  { transform: scale(0.8); opacity: 0.5; }
-      30%  { transform: scale(0.4); opacity: 0.2; }
-      45%  { transform: scale(0.9); opacity: 0.6; }
-      60%  { transform: scale(0.5); opacity: 0.3; }
-      75%  { transform: scale(0.85); opacity: 0.5; }
-      100% { transform: scale(1); opacity: 0.6; }
+    .d20-spinner {
+      width: 100%; height: 100%;
+      will-change: transform;
+      animation: d20-spin 2s cubic-bezier(0.15, 0.6, 0.35, 1) forwards;
+    }
+
+    .d20-body {
+      width: 100%; height: 100%;
+      position: relative;
+      filter: drop-shadow(0 0 12px rgba(233,69,96,0.5));
+    }
+
+    .d20-body svg { width: 100%; height: 100%; }
+    .d20-body svg polygon { fill: #1a0828; stroke: #e94560; stroke-width: 1.5; }
+    .d20-body svg .d20-inner { stroke: #e9456066; stroke-width: 0.8; fill: none; }
+
+    .d20-number {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 22px; font-weight: 900; color: #fff;
+      text-shadow: 0 0 10px rgba(233,69,96,0.8);
+      pointer-events: none;
+    }
+
+    /* Shadow */
+    .d20-shadow {
+      position: absolute; bottom: 8px; left: 50%;
+      width: 60px; height: 10px; margin-left: -30px;
+      background: radial-gradient(ellipse, rgba(0,0,0,0.4) 0%, transparent 70%);
+      border-radius: 50%;
+      will-change: transform, opacity;
+      animation: d20-shadow 2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    /* Bounce path — smooth arc movement */
+    @keyframes d20-bounce {
+      0%   { transform: translate3d(-140px, -20px, 0) scale(0.7); }
+      20%  { transform: translate3d(-40px, 15px, 0) scale(1); }
+      40%  { transform: translate3d(30px, -10px, 0) scale(0.95); }
+      60%  { transform: translate3d(15px, 8px, 0) scale(1); }
+      80%  { transform: translate3d(-5px, -2px, 0) scale(0.98); }
+      100% { transform: translate3d(0px, 0px, 0) scale(1); }
+    }
+
+    /* Spin — fast then slow, GPU accelerated */
+    @keyframes d20-spin {
+      0%   { transform: rotate3d(1, 1, 0.5, 0deg); }
+      30%  { transform: rotate3d(1, 1, 0.5, 720deg); }
+      60%  { transform: rotate3d(0.5, 1, 1, 1200deg); }
+      85%  { transform: rotate3d(0.3, 1, 0.2, 1380deg); }
+      100% { transform: rotate3d(0, 0, 1, 1440deg); }
+    }
+
+    @keyframes d20-shadow {
+      0%   { transform: scaleX(0.4); opacity: 0.15; }
+      20%  { transform: scaleX(1.2); opacity: 0.5; }
+      40%  { transform: scaleX(0.6); opacity: 0.25; }
+      60%  { transform: scaleX(1.1); opacity: 0.45; }
+      80%  { transform: scaleX(0.9); opacity: 0.4; }
+      100% { transform: scaleX(1); opacity: 0.5; }
+    }
+
+    /* Glow pulse while rolling */
+    .d20-container.rolling-active .d20-body svg polygon {
+      animation: d20-glow 0.3s ease-in-out infinite alternate;
+    }
+    @keyframes d20-glow {
+      0%   { stroke: #e94560; filter: drop-shadow(0 0 4px rgba(233,69,96,0.3)); }
+      100% { stroke: #ff6b8a; filter: drop-shadow(0 0 12px rgba(233,69,96,0.7)); }
     }
 
     /* Final result display */
@@ -615,19 +658,28 @@
       <div id="dice-3d-result"></div>
     </div>
 
-    <!-- Dice Result Display (with 3D rolling animation) -->
+    <!-- Dice Result Display (with D20 rolling animation) -->
     <div id="dice-result">
       <div id="dice-result-label"></div>
       <div id="dice-rolling">
-        <div class="dice-shadow"></div>
-        <div class="dice-stage">
-          <div class="dice-cube">
-            <div class="dice-face" id="dice-f1">20</div>
-            <div class="dice-face" id="dice-f2">7</div>
-            <div class="dice-face" id="dice-f3">14</div>
-            <div class="dice-face" id="dice-f4">3</div>
-            <div class="dice-face" id="dice-f5">11</div>
-            <div class="dice-face" id="dice-f6">18</div>
+        <div class="d20-shadow"></div>
+        <div class="d20-container rolling-active" id="d20-container">
+          <div class="d20-spinner">
+            <div class="d20-body">
+              <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <!-- D20 icosahedron outline -->
+                <polygon points="50,5 93,28 93,72 50,95 7,72 7,28"/>
+                <!-- Inner triangle lines for d20 look -->
+                <line class="d20-inner" x1="50" y1="5" x2="50" y2="95"/>
+                <line class="d20-inner" x1="7" y1="28" x2="93" y2="72"/>
+                <line class="d20-inner" x1="93" y1="28" x2="7" y2="72"/>
+                <line class="d20-inner" x1="50" y1="5" x2="7" y2="72"/>
+                <line class="d20-inner" x1="50" y1="5" x2="93" y2="72"/>
+                <line class="d20-inner" x1="7" y1="28" x2="50" y2="95"/>
+                <line class="d20-inner" x1="93" y1="28" x2="50" y2="95"/>
+              </svg>
+              <div class="d20-number" id="d20-number">20</div>
+            </div>
           </div>
         </div>
       </div>

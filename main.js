@@ -1762,45 +1762,60 @@ function rollDiceValues(notation) {
   return { diceTotal, sides, diceCount, isSingleD20 };
 }
 
+let diceNumberInterval = null;
+
 function showDiceResultDisplay(label, result) {
   const { diceTotal, modifier, finalTotal, natValue } = result;
   const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
   const detail = modifier !== 0 ? `${diceTotal}${modStr} = ${finalTotal}` : `${diceTotal}`;
 
-  // Randomize dice faces — put the actual roll result on face 1 (front-facing at end)
-  const faces = [
-    document.getElementById("dice-f1"),
-    document.getElementById("dice-f2"),
-    document.getElementById("dice-f3"),
-    document.getElementById("dice-f4"),
-    document.getElementById("dice-f5"),
-    document.getElementById("dice-f6"),
-  ];
-  faces[0].textContent = diceTotal; // This face ends up in front after the roll
-  const usedNums = new Set([diceTotal]);
-  for (let i = 1; i < 6; i++) {
-    let n;
-    do { n = Math.floor(Math.random() * 20) + 1; } while (usedNums.has(n));
-    usedNums.add(n);
-    faces[i].textContent = n;
-  }
+  const d20Number = document.getElementById("d20-number");
+  const d20Container = document.getElementById("d20-container");
 
-  // Force re-trigger CSS animation by cloning dice stage
+  // Re-trigger CSS animations by cloning
   const rolling = document.getElementById("dice-rolling");
-  const oldStage = rolling.querySelector(".dice-stage");
-  const newStage = oldStage.cloneNode(true);
-  oldStage.replaceWith(newStage);
+  const oldContainer = rolling.querySelector(".d20-container");
+  const newContainer = oldContainer.cloneNode(true);
+  newContainer.classList.add("rolling-active");
+  oldContainer.replaceWith(newContainer);
 
-  // Phase 1: Show rolling 3D dice
+  // Get fresh refs after clone
+  const freshNumber = newContainer.querySelector(".d20-number");
+
+  // Phase 1: Show rolling D20
   diceResultLabel.textContent = label || "";
   diceResultValue.textContent = "";
   diceResultDetail.textContent = "";
   diceResultEl.className = "visible rolling";
 
-  // Phase 2: After rolling animation ends, show result
+  // Animate numbers on the d20 face — fast then slowing down
+  clearInterval(diceNumberInterval);
+  let speed = 60;
+  let elapsed = 0;
+  const maxDuration = 1800;
+
+  function tickNumber() {
+    elapsed += speed;
+    if (elapsed >= maxDuration) {
+      // Show final result on dice
+      freshNumber.textContent = diceTotal;
+      clearInterval(diceNumberInterval);
+      return;
+    }
+    freshNumber.textContent = Math.floor(Math.random() * 20) + 1;
+    // Slow down gradually
+    speed = 60 + (elapsed / maxDuration) * 200;
+    clearInterval(diceNumberInterval);
+    diceNumberInterval = setInterval(tickNumber, speed);
+  }
+  diceNumberInterval = setInterval(tickNumber, speed);
+
+  // Phase 2: After roll, show result
   clearTimeout(diceResultEl._rollTimer);
   diceResultEl._rollTimer = setTimeout(() => {
-    // Hide dice, show result
+    clearInterval(diceNumberInterval);
+    newContainer.classList.remove("rolling-active");
+
     diceResultEl.classList.remove("rolling");
     diceResultEl.classList.add("show-result");
     if (natValue === 20) diceResultEl.classList.add("nat-crit");
@@ -1815,12 +1830,11 @@ function showDiceResultDisplay(label, result) {
 
     playSfx("dice-hit");
 
-    // Auto-hide after showing result
     clearTimeout(diceResultEl._hideTimer);
     diceResultEl._hideTimer = setTimeout(() => {
       diceResultEl.className = "";
     }, 2500);
-  }, 1900); // Match the 1.8s CSS animation duration
+  }, 2100);
 }
 
 function show3DResult(label, result) {
@@ -1916,8 +1930,8 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
     : `Rolled ${notation}${modStr}: ${finalTotal}`;
   OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
 
-  // Dramatic pause (longer for fallback: 1.9s roll + 2.5s result display)
-  await new Promise((r) => setTimeout(r, used3D ? 1500 : 4500));
+  // Dramatic pause (longer for fallback: 2.1s roll + 2.5s result display)
+  await new Promise((r) => setTimeout(r, used3D ? 1500 : 4700));
 
 
   // Auto-hide 3D overlay
