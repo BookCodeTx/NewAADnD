@@ -32,6 +32,7 @@ export function parseCharacter(raw) {
     speed: parseSpeed(d),
     weapons,
     skills,
+    savingThrows: parseSavingThrows(d, stats, profBonus),
     bonusActions,
   };
 }
@@ -91,6 +92,52 @@ function parseSkills(d, stats, profBonus) {
       proficient: isProf,
       expertise: isExp,
     };
+  });
+}
+
+function parseSavingThrows(d, stats, profBonus) {
+  // Gather saving throw proficiencies from modifiers
+  const allMods = [
+    ...(d.modifiers?.race || []),
+    ...(d.modifiers?.class || []),
+    ...(d.modifiers?.background || []),
+    ...(d.modifiers?.item || []),
+    ...(d.modifiers?.feat || []),
+    ...(d.modifiers?.condition || []),
+  ];
+
+  const proficient = new Set();
+  const bonuses = {};
+
+  for (const mod of allMods) {
+    // Proficiency: subType like "strength-saving-throws"
+    if (mod.type === "proficiency" && mod.subType?.endsWith("-saving-throws")) {
+      const ability = mod.subType.replace("-saving-throws", "").toUpperCase().slice(0, 3);
+      // Map full name to abbreviation
+      const nameMap = { STR: "STR", DEX: "DEX", CON: "CON", INT: "INT", WIS: "WIS", CHA: "CHA",
+                        STRENGTH: "STR", DEXTERITY: "DEX", CONSTITUTION: "CON",
+                        INTELLIGENCE: "INT", WISDOM: "WIS", CHARISMA: "CHA" };
+      const key = nameMap[ability] || ability;
+      if (ABILITY_NAMES.includes(key)) proficient.add(key);
+    }
+    // Bonus to saving throws (e.g. Ring of Protection, Paladin Aura)
+    if (mod.type === "bonus" && mod.value) {
+      if (mod.subType === "saving-throws") {
+        // Global bonus to all saves
+        for (const ab of ABILITY_NAMES) {
+          bonuses[ab] = (bonuses[ab] || 0) + mod.value;
+        }
+      }
+    }
+  }
+
+  return ABILITY_NAMES.map((name) => {
+    const stat = stats.find((s) => s.name === name);
+    const abilityMod = stat?.modifier || 0;
+    const isProf = proficient.has(name);
+    const bonus = bonuses[name] || 0;
+    const modifier = abilityMod + (isProf ? profBonus : 0) + bonus;
+    return { name, modifier, proficient: isProf };
   });
 }
 

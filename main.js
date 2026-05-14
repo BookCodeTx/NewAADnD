@@ -48,6 +48,11 @@ const skillPicker = document.getElementById("skill-picker");
 const skillGrid = document.getElementById("skill-grid");
 const skillCancel = document.getElementById("skill-cancel");
 
+// Save picker
+const savePicker = document.getElementById("save-picker");
+const saveGrid = document.getElementById("save-grid");
+const saveCancel = document.getElementById("save-cancel");
+
 // Bonus action picker
 const bonusPicker = document.getElementById("bonus-picker");
 const bonusGrid = document.getElementById("bonus-grid");
@@ -364,6 +369,53 @@ async function onSkillSelected(skill) {
 skillCancel.addEventListener("click", hideSkillPicker);
 
 // ════════════════════════════════════════
+// SAVING THROW PICKER
+// ════════════════════════════════════════
+
+function buildSaveGrid() {
+  saveGrid.innerHTML = "";
+  const saves = currentCharData?.savingThrows || [];
+  if (saves.length === 0) {
+    // Fallback: build from stats if savingThrows not parsed
+    const stats = currentCharData?.stats || [];
+    for (const s of stats) {
+      const card = document.createElement("div");
+      card.className = "save-card";
+      card.innerHTML = `<div class="save-name">${s.name}</div><div class="save-mod">${s.modifier >= 0 ? "+" : ""}${s.modifier}</div>`;
+      card.addEventListener("click", () => onSaveSelected({ name: s.name, modifier: s.modifier }));
+      saveGrid.appendChild(card);
+    }
+    return;
+  }
+
+  for (const save of saves) {
+    const card = document.createElement("div");
+    card.className = `save-card${save.proficient ? " proficient" : ""}`;
+    card.innerHTML = `
+      <div class="save-name">${save.name}</div>
+      <div class="save-mod">${save.modifier >= 0 ? "+" : ""}${save.modifier}</div>
+    `;
+    card.addEventListener("click", () => onSaveSelected(save));
+    saveGrid.appendChild(card);
+  }
+}
+
+function showSavePicker() {
+  buildSaveGrid();
+  savePicker.classList.add("visible");
+  hideOtherPickers("save");
+}
+
+function hideSavePicker() { savePicker.classList.remove("visible"); }
+
+async function onSaveSelected(save) {
+  hideSavePicker();
+  await rollDice("1d20", `${currentCharData.name} ${save.name} Save`, save.modifier);
+}
+
+saveCancel.addEventListener("click", hideSavePicker);
+
+// ════════════════════════════════════════
 // BONUS ACTION PICKER
 // ════════════════════════════════════════
 
@@ -417,6 +469,7 @@ function hideOtherPickers(except) {
   if (except !== "spell") spellPicker.classList.remove("visible");
   if (except !== "action") actionPicker.classList.remove("visible");
   if (except !== "skill") skillPicker.classList.remove("visible");
+  if (except !== "save") savePicker.classList.remove("visible");
   if (except !== "bonus") bonusPicker.classList.remove("visible");
   if (except !== "condition") conditionPicker.classList.remove("visible");
 }
@@ -1882,7 +1935,7 @@ function showHotbar(char) {
 
 function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("hidden"); conditionBar.classList.add("hidden"); hpEditor.classList.remove("visible"); tokenNameEl.textContent = ""; currentCharData = null; currentConditions = []; }
 
-function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideBonusPicker(); hideAoeResults(); currentTokenId = null; }
+function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); currentTokenId = null; }
 
 function showLinkPanel(name) {
   linkStatus.textContent = `"${name}" has no character linked.`;
@@ -1896,7 +1949,6 @@ function showLinkPanel(name) {
 
 const COMBAT_ACTIONS = ["attack", "spell"];
 const NON_COMBAT_ROLLS = {
-  defend: (char) => ({ notation: "1d20", label: `${char.name} Saving Throw`, modifier: 0 }),
   rest: (char) => {
     const conMod = char.stats.find((s) => s.name === "CON")?.modifier || 0;
     return { notation: "1d10", label: `${char.name} Hit Die (Rest)`, modifier: conMod };
@@ -1917,6 +1969,12 @@ document.querySelectorAll(".hotbar-btn").forEach((btn) => {
     if (action === "skill") {
       if (skillPicker.classList.contains("visible")) hideSkillPicker();
       else showSkillPicker();
+      return;
+    }
+
+    if (action === "defend") {
+      if (savePicker.classList.contains("visible")) hideSavePicker();
+      else showSavePicker();
       return;
     }
 
