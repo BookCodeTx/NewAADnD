@@ -269,6 +269,7 @@ function parseAC(d, stats) {
 
   let armorAC = null;
   let shieldBonus = 0;
+
   for (const item of d.inventory || []) {
     const def = item.definition;
     if (!item.equipped || !def || !def.armorClass) continue;
@@ -291,7 +292,28 @@ function parseAC(d, stats) {
     }
   }
 
-  return (armorAC ?? baseAC) + shieldBonus;
+  // Gather ALL AC bonuses from modifier sources:
+  // d.modifiers.item  → magic armor/shield bonuses (+1 chain mail, Ring of Protection, etc.)
+  // d.modifiers.class → Fighting Style: Defense (+1 AC while wearing armor)
+  // d.modifiers.feat  → feat-based AC bonuses
+  // d.modifiers.race  → racial AC bonuses
+  const allMods = [
+    ...(d.modifiers?.race || []),
+    ...(d.modifiers?.class || []),
+    ...(d.modifiers?.background || []),
+    ...(d.modifiers?.item || []),
+    ...(d.modifiers?.feat || []),
+    ...(d.modifiers?.condition || []),
+  ];
+
+  let modifierBonus = 0;
+  for (const mod of allMods) {
+    if (mod.type === "bonus" && mod.subType === "armor-class" && mod.value) {
+      modifierBonus += mod.value;
+    }
+  }
+
+  return (armorAC ?? baseAC) + shieldBonus + modifierBonus;
 }
 
 function parseSpeed(d) {
