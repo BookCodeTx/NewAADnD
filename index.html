@@ -786,13 +786,15 @@
         <div id="paste-status"></div>
       </div>
       <div class="link-content hidden" id="tab-monster">
-        <textarea id="monster-json" placeholder='{"name":"Goblin","ac":15,"hp":7,"speed":30,"stats":{"str":8,"dex":14,"con":10,"int":10,"wis":8,"cha":8},"actions":[{"name":"Scimitar","damage":"1d6+2","type":"Martial Melee"}]}'></textarea>
+        <textarea id="monster-json" placeholder='{"name":"Goblin","ac":15,"hp":7,"speed":30,"cr":0.25,"type":"Humanoid","stats":{"str":8,"dex":14,"con":10,"int":10,"wis":8,"cha":8},"saves":["DEX"],"skills":["stealth"],"actions":[{"name":"Scimitar","damage":"1d6+2","damageType":"Slashing","attackBonus":4}],"features":[{"name":"Nimble Escape","description":"Disengage or Hide as bonus action"}],"spells":[],"inventory":[]}'></textarea>
         <div style="display:flex;gap:6px;margin-top:4px;justify-content:center">
           <button id="monster-apply-btn">Apply to Token</button>
           <button id="unlink-btn" class="hidden">Unlink</button>
         </div>
         <div id="monster-status"></div>
-        <div class="monster-template-hint">Paste monster stat block as JSON</div>
+        <div class="monster-template-hint">
+          JSON: name, ac, hp, speed, cr, type, stats, saves, skills, actions, features, spells, inventory, currency
+        </div>
       </div>
     </div>
 

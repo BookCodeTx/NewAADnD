@@ -2391,6 +2391,7 @@ function normalizeMonster(m) {
   const conMod = stats[2].modifier;
   const hp = m.hp ?? 10;
 
+  // Weapons from actions
   const weapons = (m.actions || []).map((a) => ({
     name: a.name || "Attack",
     equipped: true,
@@ -2399,17 +2400,83 @@ function normalizeMonster(m) {
     damageType: a.damageType || "Slashing",
     range: a.range || "5",
     properties: a.properties || [],
+    attackBonus: a.attackBonus ?? null,
   }));
 
   const totalLevel = m.cr ? Math.max(1, Math.round(m.cr)) : 1;
-
   const profBonus = Math.ceil(totalLevel / 4) + 1;
+
+  // Saving throws — proficient saves from JSON or default none
+  const saveProfSet = new Set((m.savingThrows || m.saves || []).map(s => s.toUpperCase().slice(0, 3)));
+  const savingThrows = statNames.map((name) => {
+    const stat = stats.find(s => s.name === name);
+    const isProf = saveProfSet.has(name);
+    return { name, modifier: (stat?.modifier || 0) + (isProf ? profBonus : 0), proficient: isProf };
+  });
+
+  // Spells
+  const spells = (m.spells || []).map((sp) => ({
+    key: (sp.name || "spell").toLowerCase().replace(/[^a-z0-9]/g, "_"),
+    name: sp.name || "Spell",
+    level: sp.level ?? 0,
+    damage: sp.damage || null,
+    damageType: sp.damageType || null,
+    save: sp.save || null,
+    isAoE: sp.isAoE || false,
+    aoeRadius: sp.aoeRadius || 0,
+    isAttack: sp.isAttack || false,
+    attackBonus: sp.attackBonus ?? null,
+    healing: sp.healing || null,
+    concentration: sp.concentration || false,
+    ritual: sp.ritual || false,
+    description: sp.description || "",
+    spellDC: sp.dc || (8 + profBonus + Math.max(stats[3].modifier, stats[4].modifier, stats[5].modifier)),
+  }));
+
+  // Features / special abilities
+  const features = (m.features || m.traits || []).map((f) => ({
+    key: (f.name || "trait").toLowerCase().replace(/[^a-z0-9]/g, "-"),
+    name: f.name || "Trait",
+    source: "class",
+    sourceType: m.type || "Monster",
+    activationType: f.activationType || null,
+    description: (f.description || f.desc || "").slice(0, 200),
+    maxUses: f.uses ?? f.maxUses ?? null,
+    usedCount: 0,
+    remaining: f.uses ?? f.maxUses ?? null,
+    resetType: f.resetType || (f.recharge ? "Short Rest" : null),
+    isAttack: false,
+    saveStat: f.save || null,
+    dice: f.dice || null,
+  }));
+
+  // Inventory
+  const inventory = (m.inventory || m.equipment || []).map((item) => ({
+    name: item.name || "Item",
+    type: item.type || "Other",
+    subType: item.subType || "",
+    equipped: item.equipped ?? true,
+    quantity: item.quantity ?? 1,
+    weight: item.weight ?? 0,
+    cost: item.cost ?? 0,
+    costUnit: item.costUnit || "gp",
+    rarity: item.rarity || "Common",
+    description: item.description || "",
+    notes: item.notes || "",
+    isAttuned: item.isAttuned || false,
+    isMagic: item.isMagic || false,
+    canEquip: item.canEquip ?? true,
+  }));
+
+  // Currency
+  const currency = m.currency || { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 };
+
   return {
     id: null,
     name: m.name,
-    avatarUrl: null,
+    avatarUrl: m.avatarUrl || null,
     race: m.type || "Monster",
-    classes: [{ name: m.type || "Monster", level: totalLevel, subclass: null }],
+    classes: [{ name: m.type || "Monster", level: totalLevel, subclass: m.subtype || null }],
     level: totalLevel,
     hp: { current: hp, max: hp, temp: 0 },
     stats,
@@ -2418,7 +2485,12 @@ function normalizeMonster(m) {
     speed: m.speed ?? 30,
     weapons,
     skills: defaultSkills(stats, profBonus, m.skills || []),
+    savingThrows,
     bonusActions: m.bonusActions || [],
+    inventory,
+    currency,
+    spells,
+    features,
   };
 }
 
