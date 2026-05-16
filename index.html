@@ -269,7 +269,7 @@
     .cond-cancel:hover { background: #ff66aa22; }
 
     /* ═══ INVENTORY PANEL ═══ */
-    #inventory-panel { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1810, #141008); border: 2px solid #e9c645; border-radius: 10px; margin-top: 6px; max-height: 420px; overflow: hidden; }
+    #inventory-panel { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1810, #141008); border: 2px solid #e9c645; border-radius: 10px; margin-top: 6px; max-height: 480px; overflow-y: auto; }
     #inventory-panel.visible { display: block; animation: dice-pop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
     .inv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
     .inv-title { font-size: 13px; font-weight: 700; color: #e9c645; text-shadow: 0 0 8px rgba(233,198,69,0.3); }
@@ -293,7 +293,8 @@
     .inv-tab { padding: 3px 8px; border-radius: 4px; border: 1px solid #e9c64533; background: none; color: #8899aa; font-size: 9px; cursor: pointer; transition: all 0.15s; }
     .inv-tab:hover { background: #e9c64515; color: #e9c645; }
     .inv-tab.active { background: #e9c64522; color: #e9c645; border-color: #e9c645; font-weight: 600; }
-    .inv-list { max-height: 310px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+    .inv-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+    #inventory-panel::-webkit-scrollbar { width: 4px; } #inventory-panel::-webkit-scrollbar-thumb { background: #e9c64544; border-radius: 2px; }
     .inv-list::-webkit-scrollbar { width: 4px; } .inv-list::-webkit-scrollbar-thumb { background: #e9c64544; border-radius: 2px; }
     .inv-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #ffffff06; border-radius: 6px; border: 1px solid transparent; transition: all 0.15s; cursor: default; }
     .inv-item:hover { background: #e9c64510; border-color: #e9c64533; }
