@@ -674,6 +674,7 @@ let currentInvFilter = "all";
 
 function showInventoryPanel() {
   buildInventoryList();
+  updateBackupInfo();
   inventoryPanel.classList.add("visible");
   hideOtherPickers("inventory");
 }
@@ -884,6 +885,93 @@ invCurrency?.addEventListener("click", (e) => {
     buildInventoryList();
     logCombat(`💰 <strong>${currentCharData.name}</strong> updated currency`, "info");
   });
+});
+
+// ── Inventory Backup / Restore ──
+const INV_BACKUP_PREFIX = "dnd-inv-backup:";
+
+function getBackupKey() {
+  if (!currentCharData?.name) return null;
+  return INV_BACKUP_PREFIX + currentCharData.name;
+}
+
+function updateBackupInfo() {
+  const info = document.getElementById("inv-backup-info");
+  const loadBtn = document.getElementById("inv-load-btn");
+  if (!info) return;
+  const key = getBackupKey();
+  if (!key) { info.textContent = ""; return; }
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    info.textContent = "No backup";
+    loadBtn?.classList.remove("has-backup");
+    return;
+  }
+  try {
+    const backup = JSON.parse(raw);
+    const date = new Date(backup.savedAt);
+    const timeStr = date.toLocaleDateString("th-TH", { day: "numeric", month: "short" }) + " " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    const itemCount = backup.inventory?.length || 0;
+    info.innerHTML = `Last: <span class="time">${timeStr}</span> (${itemCount} items)`;
+    loadBtn?.classList.add("has-backup");
+  } catch {
+    info.textContent = "No backup";
+    loadBtn?.classList.remove("has-backup");
+  }
+}
+
+document.getElementById("inv-save-btn")?.addEventListener("click", () => {
+  if (!currentCharData) return;
+  const key = getBackupKey();
+  if (!key) return;
+  const backup = {
+    savedAt: Date.now(),
+    charName: currentCharData.name,
+    inventory: JSON.parse(JSON.stringify(currentCharData.inventory || [])),
+    currency: JSON.parse(JSON.stringify(currentCharData.currency || {})),
+  };
+  localStorage.setItem(key, JSON.stringify(backup));
+  updateBackupInfo();
+  logCombat(`💾 <strong>${currentCharData.name}</strong> inventory backed up (${backup.inventory.length} items)`, "info");
+  OBR.notification.show(`Inventory saved for ${currentCharData.name}!`, "SUCCESS");
+});
+
+document.getElementById("inv-load-btn")?.addEventListener("click", async () => {
+  if (!currentCharData || !currentTokenId) return;
+  const key = getBackupKey();
+  if (!key) return;
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    OBR.notification.show("No backup found for this character", "WARNING");
+    return;
+  }
+  try {
+    const backup = JSON.parse(raw);
+    const date = new Date(backup.savedAt);
+    const timeStr = date.toLocaleDateString("th-TH") + " " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    const itemCount = backup.inventory?.length || 0;
+
+    // Merge: keep items from backup, add any NEW items from current that aren't in backup
+    const backupNames = new Set(backup.inventory.map(i => i.name));
+    const currentOnly = (currentCharData.inventory || []).filter(i => !backupNames.has(i.name));
+
+    if (currentOnly.length > 0) {
+      // There are items in current inventory not in backup — merge them
+      currentCharData.inventory = [...backup.inventory, ...currentOnly];
+      logCombat(`📂 <strong>${currentCharData.name}</strong> loaded backup (${timeStr}) — ${itemCount} items restored + ${currentOnly.length} new items kept`, "info");
+    } else {
+      currentCharData.inventory = backup.inventory;
+      logCombat(`📂 <strong>${currentCharData.name}</strong> loaded backup (${timeStr}) — ${itemCount} items restored`, "info");
+    }
+    currentCharData.currency = backup.currency;
+
+    await saveInventory();
+    buildInventoryList();
+    OBR.notification.show(`Inventory restored for ${currentCharData.name}!`, "SUCCESS");
+  } catch (err) {
+    console.error("Failed to load backup:", err);
+    OBR.notification.show("Failed to load backup", "ERROR");
+  }
 });
 
 invClose?.addEventListener("click", hideInventoryPanel);
