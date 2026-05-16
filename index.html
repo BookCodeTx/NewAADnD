@@ -29,7 +29,8 @@
     .init-row.active .init-name { color: #e9a045; font-weight: 700; }
     .init-row.dead { opacity: 0.4; }
     .init-roll-val { width: 32px; text-align: center; font-size: 14px; font-weight: 800; color: #c0c8d4; flex-shrink: 0; }
-    .init-name { flex: 1; font-size: 11px; color: #c0c8d4; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .init-name { flex: 1; font-size: 11px; color: #c0c8d4; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
+    .init-effect { font-size: 8px; font-weight: 800; color: #ff4400; background: #ff440022; padding: 0 4px; border-radius: 3px; flex-shrink: 0; }
     .init-hp-cell { display: flex; align-items: center; gap: 0; font-size: 11px; font-weight: 700; flex-shrink: 0; }
     .init-hp-cur { color: #45e9a0; min-width: 22px; text-align: right; }
     .init-hp-sep { color: #555; margin: 0 1px; }
@@ -98,6 +99,7 @@
     .cond-badge:hover { opacity: 0.7; }
     .cond-badge .cond-x { font-size: 8px; margin-left: 2px; opacity: 0.6; }
     .cond-badge .cond-x:hover { opacity: 1; }
+    .cond-badge .cond-turns { font-size: 8px; font-weight: 800; background: #00000044; padding: 0 3px; border-radius: 3px; margin-left: 1px; }
 
     /* Hotbar Buttons */
     #hotbar { display: flex; gap: 5px; padding: 6px 8px; background: linear-gradient(180deg, #1a1a2e, #16213e); border: 2px solid #0f3460; border-radius: 12px; box-shadow: 0 0 16px rgba(233,69,96,0.3), inset 0 1px 0 rgba(255,255,255,0.05); transition: opacity 0.3s ease, transform 0.3s ease; flex-wrap: wrap; justify-content: center; }

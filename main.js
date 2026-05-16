@@ -1011,6 +1011,11 @@ async function tickActiveEffects(activeTokenId) {
   }
 
   await setActiveEffects(updated);
+
+  // Refresh condition badges if our token was affected
+  if (activeTokenId === currentTokenId) {
+    await renderConditionBadges();
+  }
 }
 
 async function onBonusSelected(action) {
@@ -1719,16 +1724,30 @@ async function toggleCondition(key) {
   renderConditionBadges();
 }
 
-function renderConditionBadges() {
+async function renderConditionBadges() {
   if (!currentConditions.length) {
     conditionBar.classList.add("hidden");
     return;
   }
   conditionBar.classList.remove("hidden");
+
+  // Fetch active effects to show turn counters on linked conditions
+  let effects = [];
+  try { effects = await getActiveEffects(); } catch {}
+  // Map: condition key → turns remaining (e.g. "raging" → 7/10)
+  const condToEffect = {};
+  const conditionToEffectKey = { raging: "rage" };
+  for (const [condKey, effectKey] of Object.entries(conditionToEffectKey)) {
+    const eff = effects.find(e => e.tokenId === currentTokenId && e.key === effectKey);
+    if (eff) condToEffect[condKey] = eff;
+  }
+
   conditionBar.innerHTML = currentConditions.map((key) => {
     const c = CONDITIONS[key];
     if (!c) return "";
-    return `<span class="cond-badge" data-cond="${key}" style="background:${c.color}22;color:${c.color};border-color:${c.color}">${c.icon} ${c.name}<span class="cond-x">✕</span></span>`;
+    const eff = condToEffect[key];
+    const turnStr = eff ? ` <span class="cond-turns">${eff.turnsRemaining}/${eff.totalTurns}</span>` : "";
+    return `<span class="cond-badge" data-cond="${key}" style="background:${c.color}22;color:${c.color};border-color:${c.color}">${c.icon} ${c.name}${turnStr}<span class="cond-x">✕</span></span>`;
   }).join("");
 
   conditionBar.querySelectorAll(".cond-badge").forEach((badge) => {
@@ -1966,7 +1985,7 @@ async function setInitiativeState(state) {
   await OBR.room.setMetadata({ [INIT_METADATA_KEY]: state });
 }
 
-function renderInitiative(state) {
+async function renderInitiative(state) {
   if (!state || !state.order || state.order.length === 0) {
     initTrack.innerHTML = "";
     initRoundEl.textContent = "";
@@ -1983,6 +2002,10 @@ function renderInitiative(state) {
   initRoundEl.textContent = `Round ${state.round || 1}`;
   document.getElementById("init-input-panel").classList.remove("visible");
 
+  // Fetch active effects for turn indicators
+  let activeEffects = [];
+  try { activeEffects = await getActiveEffects(); } catch {}
+
   initTrack.innerHTML = state.order.map((entry, i) => {
     const isActive = i === state.currentIndex;
     const hpPct = entry.hpMax > 0 ? (entry.hpCurrent / entry.hpMax) * 100 : 100;
@@ -1992,11 +2015,17 @@ function renderInitiative(state) {
     else if (hpPct <= 25) hpClass = "critical";
     else if (hpPct <= 50) hpClass = "hurt";
 
+    // Active effects for this token
+    const tokenEffects = activeEffects.filter(e => e.tokenId === entry.tokenId);
+    const effectsHTML = tokenEffects.map(e =>
+      `<span class="init-effect" title="${e.effectName}: ${e.turnsRemaining}/${e.totalTurns} turns">🔥 ${e.turnsRemaining}</span>`
+    ).join("");
+
     return `
       <div class="init-row ${isActive ? "active" : ""} ${isDown ? "dead" : ""}"
            data-token-id="${entry.tokenId}">
         <span class="init-roll-val">${entry.initiative}</span>
-        <span class="init-name">${entry.name}</span>
+        <span class="init-name">${entry.name}${effectsHTML ? ` ${effectsHTML}` : ""}</span>
         <div class="init-hp-cell ${hpClass}">
           <span class="init-hp-cur">${entry.hpCurrent}</span>
           <span class="init-hp-sep">/</span>
