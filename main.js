@@ -2812,6 +2812,13 @@ function showHotbar(char) {
   hotbar.classList.remove("hidden");
   statsBar.classList.remove("hidden");
 
+  // Hide Spell button if character has no spells
+  const spellBtn = document.querySelector('.hotbar-btn.spell');
+  if (spellBtn) {
+    const hasSpells = (char.spells && char.spells.length > 0) || !char.spells;
+    spellBtn.style.display = hasSpells ? "" : "none";
+  }
+
   // Make HP chip clickable to open editor
   const hpChip = statsBar.querySelector(".stat-chip.hp");
   if (hpChip) {
