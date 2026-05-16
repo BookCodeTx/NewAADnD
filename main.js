@@ -135,6 +135,7 @@ const FLOATER_CHANNEL = "com.dnd-hotbar/floater";
 const FLOATER_MODAL_ID = "com.dnd-hotbar/floater-modal";
 const SFX_CHANNEL = "com.dnd-hotbar/sfx";
 const COMBAT_LOG_CHANNEL = "com.dnd-hotbar/combat-log";
+const EFFECTS_METADATA_KEY = "com.dnd-hotbar/active-effects";
 
 
 // ── Error helpers ──
@@ -892,11 +893,78 @@ featList?.addEventListener("click", async (e) => {
   logCombat(`📜 <strong>${char.name}</strong> uses <strong>${feat.name}</strong>${usesStr}`, "info");
   await OBR.notification.show(`${char.name} uses ${feat.name}!`, "SUCCESS");
 
+  // Start turn-based tracking for duration effects
+  const durationMap = { rage: 10 };
+  const duration = durationMap[key];
+  if (duration) {
+    await addActiveEffect(currentTokenId, char.name, feat.name, key, duration);
+    logCombat(`🔥 <strong>${char.name}</strong> enters <strong>${feat.name}</strong>! (${duration} turns)`, "spell");
+  }
+
   // Rebuild the list to update pips
   buildFeaturesList();
 });
 
 featClose?.addEventListener("click", hideFeaturesPanel);
+
+// ════════════════════════════════════════
+// ACTIVE EFFECTS — Turn-based duration tracking
+// ════════════════════════════════════════
+
+async function getActiveEffects() {
+  const roomMeta = await OBR.room.getMetadata();
+  return roomMeta[EFFECTS_METADATA_KEY] || [];
+}
+
+async function setActiveEffects(effects) {
+  await OBR.room.setMetadata({ [EFFECTS_METADATA_KEY]: effects });
+}
+
+async function addActiveEffect(tokenId, charName, effectName, effectKey, totalTurns) {
+  const effects = await getActiveEffects();
+  // Remove existing same effect on same token
+  const filtered = effects.filter(e => !(e.tokenId === tokenId && e.key === effectKey));
+  filtered.push({
+    tokenId,
+    charName,
+    effectName,
+    key: effectKey,
+    turnsRemaining: totalTurns,
+    totalTurns,
+  });
+  await setActiveEffects(filtered);
+}
+
+async function removeActiveEffect(tokenId, effectKey) {
+  const effects = await getActiveEffects();
+  const filtered = effects.filter(e => !(e.tokenId === tokenId && e.key === effectKey));
+  await setActiveEffects(filtered);
+}
+
+async function tickActiveEffects(activeTokenId) {
+  const effects = await getActiveEffects();
+  if (effects.length === 0) return;
+
+  const updated = [];
+  for (const effect of effects) {
+    // Only tick effects belonging to the token whose turn just started
+    if (effect.tokenId === activeTokenId) {
+      effect.turnsRemaining--;
+
+      if (effect.turnsRemaining <= 0) {
+        // Effect expired
+        logCombat(`⏰ <strong>${effect.charName}</strong>'s <strong>${effect.effectName}</strong> has ended!`, "info");
+        // Don't add to updated — it's removed
+        continue;
+      } else {
+        logCombat(`🔥 <strong>${effect.charName}</strong> — <strong>${effect.effectName}</strong>: <strong>${effect.turnsRemaining}</strong>/${effect.totalTurns} turns remaining`, "spell");
+      }
+    }
+    updated.push(effect);
+  }
+
+  await setActiveEffects(updated);
+}
 
 async function onBonusSelected(action) {
   hideBonusPicker();
@@ -2027,6 +2095,10 @@ initNextBtn.addEventListener("click", async () => {
   await setInitiativeState(state);
 
   const current = state.order[nextIndex];
+
+  // Tick active effects for the character whose turn just started
+  await tickActiveEffects(current.tokenId);
+
   await OBR.notification.show(`${current.name}'s turn! (Round ${nextRound})`, "INFO");
   await OBR.player.select([current.tokenId]);
 });
@@ -2034,6 +2106,12 @@ initNextBtn.addEventListener("click", async () => {
 // End Combat
 initEndBtn.addEventListener("click", async () => {
   await setInitiativeState(null);
+  // Clear all active effects
+  const effects = await getActiveEffects();
+  if (effects.length > 0) {
+    for (const e of effects) logCombat(`⏰ <strong>${e.charName}</strong>'s <strong>${e.effectName}</strong> ends (combat over)`, "info");
+    await setActiveEffects([]);
+  }
   logCombat("Combat ended.", "info");
   await OBR.notification.show("Combat ended.", "INFO");
 });
