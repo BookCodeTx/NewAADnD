@@ -2,7 +2,7 @@ import OBR, { buildText } from "@owlbear-rodeo/sdk";
 import DiceBox from "@3d-dice/dice-box";
 import "@3d-dice/dice-box/dist/style.css";
 import { SPELLS, getSpellcastingDC, getSaveMod, tokensInRadius, rollSave, parseDamageNotation, DPI_PER_FOOT } from "./spells.js";
-import { CONDITIONS, getConditionPenalty, shouldAutoFailSave } from "./conditions.js";
+import { CONDITIONS, getConditionPenalty, shouldAutoFailSave, getAttackerConditionEffects, getTargetConditionEffects, getSaveConditionEffects, getCheckConditionEffects, isIncapacitated, getMeleeDamageBonus } from "./conditions.js";
 import { playSfx } from "./sfx.js";
 import { playHitEffect, playCritEffect, playMissEffect, playHealEffect, playSpellEffect, screenShake, getDiceColor } from "./effects.js";
 import { parseCharacter } from "./server/parser.js";
@@ -556,7 +556,12 @@ function hideSkillPicker() { skillPicker.classList.remove("visible"); }
 
 async function onSkillSelected(skill) {
   hideSkillPicker();
-  await rollDice("1d20", `${currentCharData.name} ${skill.name}`, skill.modifier);
+  const checkFx = getCheckConditionEffects(currentConditions, skill.ability);
+  let advStr = "";
+  if (checkFx.advantage) advStr = " (Advantage)";
+  if (checkFx.disadvantage) advStr = " (Disadvantage)";
+  const notation = (checkFx.advantage || checkFx.disadvantage) ? "2d20" : "1d20";
+  await rollDice(notation, `${currentCharData.name} ${skill.name}${advStr}`, skill.modifier, null, checkFx);
 }
 
 skillCancel.addEventListener("click", hideSkillPicker);
@@ -603,7 +608,17 @@ function hideSavePicker() { savePicker.classList.remove("visible"); }
 
 async function onSaveSelected(save) {
   hideSavePicker();
-  await rollDice("1d20", `${currentCharData.name} ${save.name} Save`, save.modifier);
+  const saveFx = getSaveConditionEffects(currentConditions, save.name);
+  if (saveFx.autoFail) {
+    logCombat(`❌ <strong>${currentCharData.name}</strong> <strong>${save.name} Save</strong>: <strong class="miss">AUTO-FAIL</strong> (condition)`, "info");
+    await OBR.notification.show(`${currentCharData.name} auto-fails ${save.name} Save!`, "ERROR");
+    return;
+  }
+  let advStr = "";
+  if (saveFx.advantage) advStr = " (Advantage)";
+  if (saveFx.disadvantage) advStr = " (Disadvantage)";
+  const notation = (saveFx.advantage || saveFx.disadvantage) ? "2d20" : "1d20";
+  await rollDice(notation, `${currentCharData.name} ${save.name} Save${advStr}`, save.modifier, null, saveFx);
 }
 
 saveCancel.addEventListener("click", hideSavePicker);
@@ -893,12 +908,26 @@ featList?.addEventListener("click", async (e) => {
   logCombat(`📜 <strong>${char.name}</strong> uses <strong>${feat.name}</strong>${usesStr}`, "info");
   await OBR.notification.show(`${char.name} uses ${feat.name}!`, "SUCCESS");
 
-  // Start turn-based tracking for duration effects
+  // Start turn-based tracking for duration effects + auto-apply conditions
   const durationMap = { rage: 10 };
+  const conditionMap = { rage: "raging" }; // auto-apply condition
   const duration = durationMap[key];
   if (duration) {
     await addActiveEffect(currentTokenId, char.name, feat.name, key, duration);
     logCombat(`🔥 <strong>${char.name}</strong> enters <strong>${feat.name}</strong>! (${duration} turns)`, "spell");
+  }
+  // Auto-apply condition (e.g. Rage → Raging status)
+  const autoCondition = conditionMap[key];
+  if (autoCondition && !currentConditions.includes(autoCondition)) {
+    currentConditions.push(autoCondition);
+    await OBR.scene.items.updateItems([currentTokenId], (items) => {
+      for (const item of items) {
+        item.metadata[COND_METADATA_KEY] = [...currentConditions];
+      }
+    });
+    renderConditionBadges();
+    const cond = CONDITIONS[autoCondition];
+    logCombat(`${cond?.icon || "📌"} <strong>${cond?.name || autoCondition}</strong> applied to <strong>${char.name}</strong>`, "condition");
   }
 
   // Rebuild the list to update pips
@@ -954,7 +983,25 @@ async function tickActiveEffects(activeTokenId) {
       if (effect.turnsRemaining <= 0) {
         // Effect expired
         logCombat(`⏰ <strong>${effect.charName}</strong>'s <strong>${effect.effectName}</strong> has ended!`, "info");
-        // Don't add to updated — it's removed
+        // Auto-remove linked condition (e.g. rage → raging)
+        const conditionMap = { rage: "raging" };
+        const linkedCond = conditionMap[effect.key];
+        if (linkedCond) {
+          try {
+            const items = await OBR.scene.items.getItems([effect.tokenId]);
+            const token = items[0];
+            if (token) {
+              const conds = (token.metadata?.[COND_METADATA_KEY] || []).filter(c => c !== linkedCond);
+              await OBR.scene.items.updateItems([effect.tokenId], (upd) => {
+                for (const item of upd) item.metadata[COND_METADATA_KEY] = conds;
+              });
+              const condDef = CONDITIONS[linkedCond];
+              logCombat(`${condDef?.icon || "📌"} <strong>${condDef?.name || linkedCond}</strong> removed from <strong>${effect.charName}</strong>`, "condition");
+              // Update local if it's our token
+              if (effect.tokenId === currentTokenId) { currentConditions = conds; renderConditionBadges(); }
+            }
+          } catch {}
+        }
         continue;
       } else {
         logCombat(`🔥 <strong>${effect.charName}</strong> — <strong>${effect.effectName}</strong>: <strong>${effect.turnsRemaining}</strong>/${effect.totalTurns} turns remaining`, "spell");
@@ -1034,14 +1081,29 @@ async function castAoeSpell(centerToken) {
     const name = char?.name || token.name || "Unknown";
     const conditions = token.metadata?.[COND_METADATA_KEY] || [];
 
-    if (shouldAutoFailSave(conditions, spell.save)) {
+    const saveFx = getSaveConditionEffects(conditions, spell.save);
+
+    if (saveFx.autoFail) {
       saveResults.push({ token, char, name, saved: false, roll: 0, total: 0, autoFail: true });
       logCombat(`<strong>${name}</strong>: <strong class="miss">AUTO-FAIL</strong> (condition)`, "spell");
       continue;
     }
 
     const saveMod = getSaveMod(char, spell.save);
-    const { roll, total } = rollSave(saveMod);
+    let { roll, total } = rollSave(saveMod);
+
+    // Advantage/disadvantage on save
+    if (saveFx.advantage || saveFx.disadvantage) {
+      const { roll: roll2, total: total2 } = rollSave(saveMod);
+      if (saveFx.advantage) {
+        if (total2 > total) { roll = roll2; total = total2; }
+        logCombat(`↳ ${name} Save advantage: ${roll} vs ${roll2}`, "info");
+      } else {
+        if (total2 < total) { roll = roll2; total = total2; }
+        logCombat(`↳ ${name} Save disadvantage: ${roll} vs ${roll2}`, "info");
+      }
+    }
+
     const saved = total >= dc;
     saveResults.push({ token, char, name, saved, roll, total });
 
@@ -2275,6 +2337,14 @@ async function handleSelectionChange() {
 function enterTargeting(action) {
   if (!currentCharData || !currentTokenId) return;
 
+  // Check if incapacitated
+  if (isIncapacitated(currentConditions)) {
+    const condNames = currentConditions.filter(k => CONDITIONS[k]?.incapacitated).map(k => CONDITIONS[k].name).join(", ");
+    logCombat(`❌ <strong>${currentCharData.name}</strong> can't act — <strong>${condNames}</strong>!`, "info");
+    OBR.notification.show(`${currentCharData.name} is ${condNames} and can't act!`, "WARNING");
+    return;
+  }
+
   if (action === "spell") { showSpellPicker(); return; }
 
   // Show weapon picker — weapon selection will enter targeting
@@ -2329,13 +2399,25 @@ async function castSingleTargetSaveSpell(targetToken) {
   logCombat(`<strong>${caster.name}</strong> casts <strong>${spell.name}</strong> at <strong>${name}</strong> (DC ${dc} ${spell.save})`, "spell");
 
   let saved, roll, total;
-  if (shouldAutoFailSave(conditions, spell.save)) {
+  const saveFx = getSaveConditionEffects(conditions, spell.save);
+
+  if (saveFx.autoFail) {
     saved = false; roll = 0; total = 0;
     logCombat(`<strong>${name}</strong>: <strong class="miss">AUTO-FAIL</strong> (condition)`, "spell");
   } else {
     const saveMod = getSaveMod(char, spell.save);
     const result = rollSave(saveMod);
     roll = result.roll; total = result.total;
+
+    // Advantage/disadvantage on save from conditions
+    if (saveFx.advantage || saveFx.disadvantage) {
+      const result2 = rollSave(saveMod);
+      if (saveFx.advantage && result2.total > total) { roll = result2.roll; total = result2.total; }
+      if (saveFx.disadvantage && result2.total < total) { roll = result2.roll; total = result2.total; }
+      const advStr = saveFx.advantage ? "advantage" : "disadvantage";
+      logCombat(`↳ Save ${advStr}: ${result.roll} vs ${result2.roll}`, "info");
+    }
+
     saved = total >= dc;
     const saveStr = saved ? `<strong class="hit">SAVE</strong>` : `<strong class="miss">FAIL</strong>`;
     logCombat(`<strong>${name}</strong>: ${spell.save} Save ${roll}+${saveMod}=${total} ${saveStr}`, "spell");
@@ -2356,20 +2438,41 @@ async function castSingleTargetSaveSpell(targetToken) {
 
 
 async function rollAttackD20(label, atkBonus, targetAC, targetName) {
-  // Roll raw d20
-  let diceTotal;
+  // ── Determine advantage/disadvantage from conditions ──
+  const attackerConds = currentConditions || [];
+  const targetToken = targetTokenId ? (await OBR.scene.items.getItems([targetTokenId]))[0] : null;
+  const targetConds = targetToken?.metadata?.[COND_METADATA_KEY] || [];
+  const weaponType = selectedWeapon?.attackType || "melee";
+
+  const atkFx = getAttackerConditionEffects(attackerConds);
+  const tgtFx = getTargetConditionEffects(targetConds, weaponType);
+
+  // Combine: advantage from any source, disadvantage from any source
+  let hasAdvantage = atkFx.advantage || tgtFx.advantage;
+  let hasDisadvantage = atkFx.disadvantage || tgtFx.disadvantage;
+  // They cancel out
+  if (hasAdvantage && hasDisadvantage) { hasAdvantage = false; hasDisadvantage = false; }
+
+  const rollMode = hasAdvantage ? "advantage" : hasDisadvantage ? "disadvantage" : "normal";
+
+  // Log condition effects
+  if (hasAdvantage) logCombat(`✅ Rolling with <strong class="hit">ADVANTAGE</strong>`, "info");
+  if (hasDisadvantage) logCombat(`❌ Rolling with <strong class="miss">DISADVANTAGE</strong>`, "info");
+
+  // ── Roll d20(s) ──
+  let roll1, roll2;
   let used3D = false;
 
-  // Try 3D dice-box first
   if (diceReady && diceBox) {
     try {
       show3DOverlay(label);
-
+      const notation = rollMode !== "normal" ? "2d20" : "1d20";
       const results = await Promise.race([
-        diceBox.roll("1d20"),
+        diceBox.roll(notation),
         new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
       ]);
-      diceTotal = results.reduce((sum, r) => sum + r.value, 0);
+      roll1 = results[0]?.value || 1;
+      roll2 = results[1]?.value || null;
       used3D = true;
       playSfx("dice-hit");
       await new Promise((r) => setTimeout(r, 800));
@@ -2379,16 +2482,28 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
     }
   }
 
-  // Fallback to canvas
   if (!used3D) {
-    diceTotal = rollDiceValues("1d20").diceTotal;
+    roll1 = rollDiceValues("1d20").diceTotal;
+    if (rollMode !== "normal") roll2 = rollDiceValues("1d20").diceTotal;
+  }
+
+  // Pick the right d20 result
+  let diceTotal;
+  if (rollMode === "advantage") {
+    diceTotal = Math.max(roll1, roll2);
+    logCombat(`🎲 Rolls: <strong>${roll1}</strong> and <strong>${roll2}</strong> → takes <strong>${diceTotal}</strong> (advantage)`, "info");
+  } else if (rollMode === "disadvantage") {
+    diceTotal = Math.min(roll1, roll2);
+    logCombat(`🎲 Rolls: <strong>${roll1}</strong> and <strong>${roll2}</strong> → takes <strong>${diceTotal}</strong> (disadvantage)`, "info");
+  } else {
+    diceTotal = roll1;
   }
 
   const natValue = diceTotal;
   const finalTotal = diceTotal + atkBonus;
 
   const result = {
-    notation: "1d20", diceTotal, modifier: atkBonus, finalTotal, natValue,
+    notation: rollMode !== "normal" ? "2d20" : "1d20", diceTotal, modifier: atkBonus, finalTotal, natValue,
     charName: attackerData?.name || "", label, rollId: crypto.randomUUID(),
   };
 
@@ -2398,11 +2513,9 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
 
   if (used3D) {
     show3DResult(label, result);
-    // Hold 3D result for 5 seconds
     await new Promise((r) => setTimeout(r, 5000));
   } else {
     showDiceResultDisplay(label, result, "d20");
-    // Wait for dice animation (2.8s) + result hold (5s)
     await new Promise((r) => setTimeout(r, 8000));
   }
 
@@ -2416,16 +2529,19 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
   const hitStr = natValue === 20 ? "NAT 20!" : natValue === 1 ? "NAT 1" : `${finalTotal} vs AC ${targetAC}`;
   logCombat(`<strong>${attackerData.name}</strong> rolls to hit: ${diceTotal}${modStr} = <strong>${finalTotal}</strong> (${hitStr})`, "info");
 
-  // Hide dice display
   if (used3D) hide3DOverlay();
 
-  // Determine outcome
-  const isCrit = natValue === 20;
+  // ── Determine outcome ──
+  // Paralyzed target: melee hits are auto-crits
+  const forceCrit = tgtFx.autoCrit && natValue !== 1;
+  const isCrit = natValue === 20 || forceCrit;
   const isNat1 = natValue === 1;
   const isHit = isCrit || (!isNat1 && finalTotal >= targetAC);
 
+  if (forceCrit && isHit) logCombat(`⚡ <strong>AUTO-CRIT</strong> — target is Paralyzed!`, "crit");
+
   if (isHit) {
-    resolveAttackRoll({ finalTotal, natValue });
+    resolveAttackRoll({ finalTotal, natValue: isCrit ? 20 : natValue });
   } else {
     resolveAttackRoll({ finalTotal, natValue: isNat1 ? 1 : 0 });
   }
@@ -2593,9 +2709,18 @@ async function rollDamageDice(isCrit, targetName) {
     individualResults = rolled.individualResults;
   }
 
-  const totalDamage = Math.max(0, diceTotal + damageMod);
+  // Add condition-based melee damage bonus (e.g. Rage +2)
+  let condDmgBonus = 0;
+  if (weapon.attackType === "melee" || !weapon.attackType) {
+    const attackerConds = currentConditions || [];
+    condDmgBonus = getMeleeDamageBonus(attackerConds);
+    if (condDmgBonus > 0) logCombat(`🔥 <strong>Rage</strong> adds <strong>+${condDmgBonus}</strong> melee damage`, "info");
+  }
+
+  const totalDamage = Math.max(0, diceTotal + damageMod + condDmgBonus);
   const label = `${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`;
-  const modStr = damageMod > 0 ? `+${damageMod}` : damageMod < 0 ? `${damageMod}` : "";
+  const effectiveMod = damageMod + condDmgBonus;
+  const modStr = effectiveMod > 0 ? `+${effectiveMod}` : effectiveMod < 0 ? `${effectiveMod}` : "";
 
   const result = {
     notation, diceTotal, modifier: damageMod, finalTotal: totalDamage,
@@ -2953,7 +3078,7 @@ function show3DResult(label, result) {
   dice3dResult.classList.add("visible");
 }
 
-async function rollDice(notation, label, modifier = 0, rollId = null) {
+async function rollDice(notation, label, modifier = 0, rollId = null, condFx = null) {
   const rid = rollId || crypto.randomUUID();
   pendingRollId = rid;
 
@@ -2977,7 +3102,6 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
       individualResults = results.map(r => r.value);
       used3D = true;
       playSfx("dice-hit");
-      // Let dice settle visually
       await new Promise((r) => setTimeout(r, 800));
     } catch (err) {
       console.warn("[dice] 3D roll failed, using canvas fallback:", err.message);
@@ -2985,8 +3109,21 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
     }
   }
 
+  // Handle advantage/disadvantage for 2d20 rolls
+  if (condFx && (condFx.advantage || condFx.disadvantage) && individualResults.length >= 2) {
+    const r1 = individualResults[0], r2 = individualResults[1];
+    if (condFx.advantage) {
+      diceTotal = Math.max(r1, r2);
+      logCombat(`🎲 Rolls: <strong>${r1}</strong> and <strong>${r2}</strong> → takes <strong>${diceTotal}</strong> (advantage)`, "info");
+    } else {
+      diceTotal = Math.min(r1, r2);
+      logCombat(`🎲 Rolls: <strong>${r1}</strong> and <strong>${r2}</strong> → takes <strong>${diceTotal}</strong> (disadvantage)`, "info");
+    }
+  }
+
   const finalTotal = diceTotal + modifier;
-  const natValue = isSingleD20 ? diceTotal : null;
+  const isSingleD20Check = notation === "1d20" || (condFx && notation === "2d20");
+  const natValue = isSingleD20Check ? diceTotal : null;
 
   const result = {
     notation, diceTotal, modifier, finalTotal, natValue,
