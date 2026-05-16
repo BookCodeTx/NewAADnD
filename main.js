@@ -1093,6 +1093,7 @@ async function applyHpChange(newCurrent, newMax = null, newTemp = null, label = 
   currentCharData.hp.current = finalCurrent;
   currentCharData.hp.max = finalMax;
   currentCharData.hp.temp = finalTemp;
+  currentCharData._lastUpdated = Date.now();
 
   // Refresh UI
   showHotbar(currentCharData);
@@ -1211,6 +1212,7 @@ async function applyAcChange(newAc) {
   });
 
   currentCharData.ac = finalAc;
+  currentCharData._lastUpdated = Date.now();
   showHotbar(currentCharData);
   refreshAcEditor();
   await syncInitiativeAC();
@@ -1408,6 +1410,7 @@ document.getElementById("paste-apply-btn").addEventListener("click", async () =>
       }
     });
 
+    char._lastUpdated = Date.now();
     currentCharData = char;
     showHotbar(char);
     linkPanel.classList.add("hidden");
@@ -1456,6 +1459,7 @@ monsterApplyBtn.addEventListener("click", async () => {
       }
     });
 
+    character._lastUpdated = Date.now();
     currentCharData = character;
     showHotbar(character);
     linkPanel.classList.add("hidden");
@@ -1819,6 +1823,35 @@ OBR.onReady(async () => {
 function setupListeners() {
   OBR.player.onChange(handleSelectionChange);
   handleSelectionChange();
+
+  // Watch for token metadata changes (e.g. another player syncing character data)
+  OBR.scene.items.onChange((items) => {
+    if (!currentTokenId) return;
+    const token = items.find(i => i.id === currentTokenId);
+    if (!token) return;
+    const meta = token.metadata?.[METADATA_KEY];
+    if (!meta?.character) return;
+
+    // Check if the data actually changed
+    const newUpdated = meta.lastUpdated || 0;
+    const oldUpdated = currentCharData?._lastUpdated || 0;
+    if (newUpdated <= oldUpdated) return;
+
+    // Update local data
+    const char = meta.character;
+    char._lastUpdated = newUpdated;
+    currentCharData = char;
+    showHotbar(char);
+
+    // Refresh inventory panel if it's currently open
+    if (inventoryPanel.classList.contains("visible")) {
+      buildInventoryList();
+    }
+
+    // Refresh condition badges
+    currentConditions = token.metadata?.[COND_METADATA_KEY] || [];
+    renderConditionBadges();
+  });
 }
 
 async function handleSelectionChange() {
@@ -1856,6 +1889,7 @@ async function handleSelectionChange() {
   currentConditions = token.metadata?.[COND_METADATA_KEY] || [];
 
   if (meta?.character) {
+    meta.character._lastUpdated = meta.lastUpdated || 0;
     currentCharData = meta.character;
     showHotbar(currentCharData);
     renderConditionBadges();
@@ -2817,6 +2851,7 @@ linkBtn.addEventListener("click", async () => {
         item.metadata[METADATA_KEY] = { characterId: charId, character: char, lastUpdated: Date.now() };
       }
     });
+    char._lastUpdated = Date.now();
     currentCharData = char;
     showHotbar(char);
     linkPanel.classList.add("hidden");
@@ -2856,8 +2891,11 @@ document.getElementById("refresh-btn").addEventListener("click", async () => {
         item.metadata[METADATA_KEY] = { characterId: meta.characterId, character: result.character, lastUpdated: Date.now() };
       }
     });
+    result.character._lastUpdated = Date.now();
     currentCharData = result.character;
     showHotbar(result.character);
+    // Refresh inventory if open
+    if (inventoryPanel.classList.contains("visible")) buildInventoryList();
     await OBR.notification.show("อัปเดตข้อมูลตัวละครสำเร็จ!", "SUCCESS");
   } catch (err) {
     showError("เกิดข้อผิดพลาด", err.message);
