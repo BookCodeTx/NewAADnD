@@ -688,11 +688,12 @@ function buildInventoryList() {
   // Currency display
   const coins = [];
   if (currency.pp) coins.push(`<span class="pp">${currency.pp} pp</span>`);
-  if (currency.gp) coins.push(`<span class="gp">${currency.gp} gp</span>`);
+  coins.push(`<span class="gp">${currency.gp || 0} gp</span>`);
   if (currency.ep) coins.push(`<span class="ep">${currency.ep} ep</span>`);
   if (currency.sp) coins.push(`<span class="sp">${currency.sp} sp</span>`);
   if (currency.cp) coins.push(`<span class="cp">${currency.cp} cp</span>`);
-  invCurrency.innerHTML = coins.join("") || '<span style="color:#555">No coins</span>';
+  coins.push(`<button class="inv-currency-edit-btn" id="inv-currency-edit" title="Edit currency">✏️</button>`);
+  invCurrency.innerHTML = coins.join("");
 
   // Filter items
   let filtered = items;
@@ -859,16 +860,18 @@ async function saveInventory() {
 }
 
 // ── Currency edit ──
-invCurrency?.addEventListener("dblclick", () => {
-  if (!currentCharData) return;
+invCurrency?.addEventListener("click", (e) => {
+  const editBtn = e.target.closest("#inv-currency-edit");
+  if (!editBtn || !currentCharData) return;
+
   const currency = currentCharData.currency || {};
   invCurrency.innerHTML = `
-    <input type="number" class="inv-coin-edit" data-coin="pp" value="${currency.pp || 0}" placeholder="pp" title="Platinum" />
-    <input type="number" class="inv-coin-edit" data-coin="gp" value="${currency.gp || 0}" placeholder="gp" title="Gold" />
-    <input type="number" class="inv-coin-edit" data-coin="ep" value="${currency.ep || 0}" placeholder="ep" title="Electrum" />
-    <input type="number" class="inv-coin-edit" data-coin="sp" value="${currency.sp || 0}" placeholder="sp" title="Silver" />
-    <input type="number" class="inv-coin-edit" data-coin="cp" value="${currency.cp || 0}" placeholder="cp" title="Copper" />
-    <button class="inv-coin-save">✓</button>
+    <span class="inv-coin-group"><span class="inv-coin-label">pp</span><input type="number" class="inv-coin-edit" data-coin="pp" value="${currency.pp || 0}" /></span>
+    <span class="inv-coin-group"><span class="inv-coin-label">gp</span><input type="number" class="inv-coin-edit" data-coin="gp" value="${currency.gp || 0}" /></span>
+    <span class="inv-coin-group"><span class="inv-coin-label">ep</span><input type="number" class="inv-coin-edit" data-coin="ep" value="${currency.ep || 0}" /></span>
+    <span class="inv-coin-group"><span class="inv-coin-label">sp</span><input type="number" class="inv-coin-edit" data-coin="sp" value="${currency.sp || 0}" /></span>
+    <span class="inv-coin-group"><span class="inv-coin-label">cp</span><input type="number" class="inv-coin-edit" data-coin="cp" value="${currency.cp || 0}" /></span>
+    <button class="inv-coin-save">✓ Save</button>
   `;
 
   invCurrency.querySelector(".inv-coin-save")?.addEventListener("click", async () => {

@@ -273,13 +273,22 @@
     #inventory-panel.visible { display: block; animation: dice-pop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
     .inv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
     .inv-title { font-size: 13px; font-weight: 700; color: #e9c645; text-shadow: 0 0 8px rgba(233,198,69,0.3); }
-    .inv-currency { font-size: 10px; color: #c0b080; display: flex; gap: 6px; }
-    .inv-currency span { padding: 1px 5px; border-radius: 3px; background: #ffffff08; }
+    .inv-currency { font-size: 10px; color: #c0b080; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .inv-currency span { padding: 1px 5px; border-radius: 3px; background: #ffffff08; cursor: pointer; transition: all 0.15s; }
+    .inv-currency span:hover { background: #ffffff15; }
     .inv-currency .gp { color: #ffd700; font-weight: 600; }
     .inv-currency .sp { color: #c0c0c0; }
     .inv-currency .cp { color: #cd7f32; }
     .inv-currency .pp { color: #e5e4e2; }
     .inv-currency .ep { color: #a0a0c0; }
+    .inv-currency-edit-btn { background: none; border: none; color: #e9c64566; font-size: 10px; cursor: pointer; padding: 0 2px; transition: color 0.15s; }
+    .inv-currency-edit-btn:hover { color: #e9c645; }
+    .inv-coin-edit { width: 42px; padding: 2px 4px; border: 1px solid #e9c64544; border-radius: 3px; background: #0a0a0a; color: #ffd700; font-size: 10px; text-align: center; }
+    .inv-coin-edit:focus { outline: none; border-color: #e9c645; }
+    .inv-coin-label { font-size: 9px; color: #8899aa; }
+    .inv-coin-group { display: inline-flex; align-items: center; gap: 2px; }
+    .inv-coin-save { padding: 2px 8px; border: 1px solid #45e9a0; border-radius: 3px; background: #45e9a022; color: #45e9a0; font-size: 10px; font-weight: 700; cursor: pointer; }
+    .inv-coin-save:hover { background: #45e9a0; color: #0a0a06; }
     .inv-tabs { display: flex; gap: 3px; margin-bottom: 6px; flex-wrap: wrap; }
     .inv-tab { padding: 3px 8px; border-radius: 4px; border: 1px solid #e9c64533; background: none; color: #8899aa; font-size: 9px; cursor: pointer; transition: all 0.15s; }
     .inv-tab:hover { background: #e9c64515; color: #e9c645; }
