@@ -272,6 +272,36 @@
     .cond-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #ff66aa44; border-radius: 4px; background: none; color: #ff66aa; font-size: 10px; cursor: pointer; }
     .cond-cancel:hover { background: #ff66aa22; }
 
+    /* ═══ TOKEN SAVE/LOAD PANEL ═══ */
+    #token-save-panel { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #101a18, #0a1410); border: 2px solid #45e9a0; border-radius: 10px; margin-top: 6px; max-height: 420px; overflow-y: auto; }
+    #token-save-panel.visible { display: block; animation: dice-pop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+    #token-save-panel::-webkit-scrollbar { width: 4px; } #token-save-panel::-webkit-scrollbar-thumb { background: #45e9a044; border-radius: 2px; }
+    .tsave-header { margin-bottom: 6px; }
+    .tsave-title { font-size: 13px; font-weight: 700; color: #45e9a0; text-shadow: 0 0 8px rgba(69,233,160,0.3); }
+    .tsave-current { font-size: 10px; color: #8899aa; margin-bottom: 6px; padding: 6px; background: #ffffff06; border-radius: 6px; }
+    .tsave-current strong { color: #45e9a0; }
+    .tsave-actions { margin-bottom: 8px; }
+    .tsave-btn { width: 100%; padding: 8px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+    .tsave-btn.save { border: 1px solid #45e9a044; background: #45e9a011; color: #45e9a0; }
+    .tsave-btn.save:hover { background: #45e9a033; border-color: #45e9a0; }
+    .tsave-divider { height: 1px; background: #ffffff0a; margin: 6px 0; }
+    .tsave-subtitle { font-size: 10px; color: #6a7a8a; font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .tsave-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+    .tsave-list::-webkit-scrollbar { width: 3px; } .tsave-list::-webkit-scrollbar-thumb { background: #45e9a044; border-radius: 2px; }
+    .tsave-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #ffffff06; border-radius: 6px; border: 1px solid transparent; transition: all 0.15s; }
+    .tsave-item:hover { background: #45e9a010; border-color: #45e9a033; }
+    .tsave-item-info { flex: 1; min-width: 0; }
+    .tsave-item-name { font-size: 11px; font-weight: 600; color: #ddd; }
+    .tsave-item-detail { font-size: 9px; color: #6a7a8a; }
+    .tsave-item-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .tsave-item-btn { padding: 4px 8px; border-radius: 4px; font-size: 9px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+    .tsave-item-btn.load { border: 1px solid #4499ff44; background: none; color: #4499ff; }
+    .tsave-item-btn.load:hover { background: #4499ff22; }
+    .tsave-item-btn.delete { border: 1px solid #e9456033; background: none; color: #e94560; }
+    .tsave-item-btn.delete:hover { background: #e9456022; }
+    .tsave-close { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #45e9a044; border-radius: 4px; background: none; color: #45e9a0; font-size: 10px; cursor: pointer; }
+    .tsave-close:hover { background: #45e9a022; }
+
     /* ═══ INVENTORY PANEL ═══ */
     #inventory-panel { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1810, #141008); border: 2px solid #e9c645; border-radius: 10px; margin-top: 6px; max-height: 480px; overflow-y: auto; }
     #inventory-panel.visible { display: block; animation: dice-pop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
@@ -618,6 +648,7 @@
       <button class="hotbar-btn features-btn" data-action="features" style="border-bottom: 3px solid #e97045;"><span class="icon">📜</span><span class="label">Traits</span></button>
       <button class="hotbar-btn inventory-btn" data-action="inventory" style="border-bottom: 3px solid #e9c645;"><span class="icon">🎒</span><span class="label">Bag</span></button>
       <button class="hotbar-btn rest" data-action="rest"><span class="icon">💤</span><span class="label">Rest</span></button>
+      <button class="hotbar-btn token-save-btn" data-action="token-save" style="border-bottom: 3px solid #45e9a0;"><span class="icon">💾</span><span class="label">Save</span></button>
       <button class="hotbar-btn refresh" id="refresh-btn"><span class="icon">🔄</span><span class="label">Sync</span></button>
     </div>
 
@@ -693,6 +724,21 @@
       <div class="cond-picker-title">Toggle Condition</div>
       <div class="cond-grid" id="cond-grid"></div>
       <button class="cond-cancel" id="cond-cancel">Close</button>
+    </div>
+
+    <!-- Token Save/Load Panel -->
+    <div id="token-save-panel">
+      <div class="tsave-header">
+        <div class="tsave-title">💾 Token Save / Load</div>
+      </div>
+      <div class="tsave-current" id="tsave-current"></div>
+      <div class="tsave-actions">
+        <button class="tsave-btn save" id="tsave-save-btn">💾 Save Current Token</button>
+      </div>
+      <div class="tsave-divider"></div>
+      <div class="tsave-subtitle">Saved Tokens</div>
+      <div class="tsave-list" id="tsave-list"></div>
+      <button class="tsave-close" id="tsave-close">Close</button>
     </div>
 
     <!-- Inventory Panel -->

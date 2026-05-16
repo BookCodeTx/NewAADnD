@@ -83,6 +83,9 @@ const aoeResults = document.getElementById("aoe-results");
 const aoeTitle = document.getElementById("aoe-title");
 const aoeTargetList = document.getElementById("aoe-target-list");
 
+// Token save panel
+const tokenSavePanel = document.getElementById("token-save-panel");
+
 // Monster importer
 const monsterJson = document.getElementById("monster-json");
 const monsterApplyBtn = document.getElementById("monster-apply-btn");
@@ -1289,6 +1292,155 @@ document.getElementById("feat-load-btn")?.addEventListener("click", async () => 
   }
 });
 
+// ════════════════════════════════════════
+// TOKEN SAVE / LOAD
+// ════════════════════════════════════════
+const TOKEN_SAVE_PREFIX = "dnd-token-save:";
+
+function getAllTokenSaves() {
+  const saves = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key.startsWith(TOKEN_SAVE_PREFIX)) continue;
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      saves.push({ storageKey: key, ...data });
+    } catch { /* skip */ }
+  }
+  saves.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+  return saves;
+}
+
+function showTokenSavePanel() {
+  if (!currentCharData) return;
+  buildTokenSaveList();
+  tokenSavePanel.classList.add("visible");
+  hideOtherPickers("token-save");
+}
+
+function buildTokenSaveList() {
+  const char = currentCharData;
+  if (!char) return;
+
+  // Show current token info
+  const currentInfo = document.getElementById("tsave-current");
+  if (currentInfo) {
+    const classStr = char.classes?.map(c => c.name).join("/") || char.race || "";
+    const hpStr = `${char.hp.current}/${char.hp.max} HP`;
+    const weaponCount = char.weapons?.length || 0;
+    const spellCount = char.spells?.length || 0;
+    const featCount = char.features?.length || 0;
+    const invCount = char.inventory?.length || 0;
+    currentInfo.innerHTML = `
+      <strong>${char.name}</strong> — Lv.${char.level} ${classStr}<br>
+      ${hpStr} · AC ${char.ac} · ${weaponCount} weapons · ${spellCount} spells · ${featCount} features · ${invCount} items
+    `;
+  }
+
+  // Build saved list
+  const list = document.getElementById("tsave-list");
+  if (!list) return;
+  const saves = getAllTokenSaves();
+
+  if (saves.length === 0) {
+    list.innerHTML = '<div style="color:#555;font-size:10px;text-align:center;padding:12px">No saved tokens yet</div>';
+    return;
+  }
+
+  list.innerHTML = "";
+  for (const save of saves) {
+    const el = document.createElement("div");
+    el.className = "tsave-item";
+    const date = new Date(save.savedAt);
+    const timeStr = date.toLocaleDateString("th-TH", { day: "numeric", month: "short" }) + " " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    const classStr = save.character?.classes?.map(c => c.name).join("/") || "";
+    const hpStr = `${save.character?.hp?.current}/${save.character?.hp?.max}`;
+
+    el.innerHTML = `
+      <div class="tsave-item-info">
+        <div class="tsave-item-name">${save.character?.name || "Unknown"} — Lv.${save.character?.level || "?"} ${classStr}</div>
+        <div class="tsave-item-detail">${hpStr} HP · AC ${save.character?.ac || "?"} · ${timeStr}</div>
+      </div>
+      <div class="tsave-item-actions">
+        <button class="tsave-item-btn load" data-save-key="${save.storageKey}">📂 Load</button>
+        <button class="tsave-item-btn delete" data-save-key="${save.storageKey}">✕</button>
+      </div>
+    `;
+    list.appendChild(el);
+  }
+}
+
+// Save current token
+document.getElementById("tsave-save-btn")?.addEventListener("click", () => {
+  const char = currentCharData;
+  if (!char) return;
+
+  const saveKey = TOKEN_SAVE_PREFIX + char.name + ":" + Date.now();
+  const saveData = {
+    savedAt: Date.now(),
+    character: JSON.parse(JSON.stringify(char)),
+  };
+  // Remove _lastUpdated from saved copy
+  delete saveData.character._lastUpdated;
+
+  localStorage.setItem(saveKey, JSON.stringify(saveData));
+  buildTokenSaveList();
+  logCombat(`💾 Token <strong>${char.name}</strong> saved!`, "info");
+  OBR.notification.show(`Token "${char.name}" saved!`, "SUCCESS");
+});
+
+// Load & Delete — delegated
+document.getElementById("tsave-list")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".tsave-item-btn");
+  if (!btn) return;
+  const saveKey = btn.dataset.saveKey;
+  if (!saveKey) return;
+
+  if (btn.classList.contains("delete")) {
+    localStorage.removeItem(saveKey);
+    buildTokenSaveList();
+    return;
+  }
+
+  if (btn.classList.contains("load")) {
+    if (!currentTokenId) {
+      OBR.notification.show("No token selected", "WARNING");
+      return;
+    }
+    const raw = localStorage.getItem(saveKey);
+    if (!raw) { OBR.notification.show("Save not found", "ERROR"); return; }
+
+    try {
+      const save = JSON.parse(raw);
+      const char = save.character;
+      if (!char) throw new Error("No character data");
+
+      // Apply to current token
+      await OBR.scene.items.updateItems([currentTokenId], (items) => {
+        for (const item of items) {
+          item.metadata[METADATA_KEY] = {
+            character: char,
+            isMonster: char.race === "Monster" || !char.id,
+            lastUpdated: Date.now(),
+          };
+        }
+      });
+
+      char._lastUpdated = Date.now();
+      currentCharData = char;
+      showHotbar(char);
+      hideTokenSavePanel();
+      logCombat(`📂 Loaded <strong>${char.name}</strong> onto token`, "info");
+      OBR.notification.show(`"${char.name}" loaded onto token!`, "SUCCESS");
+    } catch (err) {
+      console.error("Failed to load token save:", err);
+      OBR.notification.show("Failed to load save", "ERROR");
+    }
+  }
+});
+
+document.getElementById("tsave-close")?.addEventListener("click", hideTokenSavePanel);
+
 // ── Rest handlers ──
 async function performRest(restType) {
   const char = currentCharData;
@@ -1489,6 +1641,7 @@ function hideOtherPickers(except) {
   if (except !== "condition") conditionPicker.classList.remove("visible");
   if (except !== "inventory") inventoryPanel.classList.remove("visible");
   if (except !== "features") featuresPanel.classList.remove("visible");
+  if (except !== "token-save") tokenSavePanel.classList.remove("visible");
 }
 
 // ════════════════════════════════════════
@@ -3835,7 +3988,8 @@ function showHotbar(char) {
 function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("hidden"); conditionBar.classList.add("hidden"); hpEditor.classList.remove("visible"); acEditor.classList.remove("visible"); tokenNameEl.textContent = ""; currentCharData = null; currentConditions = []; }
 
 function hideInventoryPanel() { inventoryPanel.classList.remove("visible"); }
-function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); hideFeaturesPanel(); currentTokenId = null; }
+function hideTokenSavePanel() { tokenSavePanel.classList.remove("visible"); }
+function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); hideFeaturesPanel(); hideTokenSavePanel(); currentTokenId = null; }
 
 function showLinkPanel(name) {
   linkStatus.textContent = `"${name}" has no character linked.`;
@@ -3893,6 +4047,12 @@ document.querySelectorAll(".hotbar-btn").forEach((btn) => {
     if (action === "features") {
       if (featuresPanel.classList.contains("visible")) hideFeaturesPanel();
       else showFeaturesPanel();
+      return;
+    }
+
+    if (action === "token-save") {
+      if (tokenSavePanel.classList.contains("visible")) hideTokenSavePanel();
+      else showTokenSavePanel();
       return;
     }
 
