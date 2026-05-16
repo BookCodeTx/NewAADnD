@@ -1,5 +1,6 @@
-import OBR from "@owlbear-rodeo/sdk";
+import OBR, { buildText } from "@owlbear-rodeo/sdk";
 import DiceBox from "@3d-dice/dice-box";
+import "@3d-dice/dice-box/dist/style.css";
 import { SPELLS, getSpellcastingDC, getSaveMod, tokensInRadius, rollSave, parseDamageNotation, DPI_PER_FOOT } from "./spells.js";
 import { CONDITIONS, getConditionPenalty, shouldAutoFailSave } from "./conditions.js";
 import { playSfx } from "./sfx.js";
@@ -10,6 +11,7 @@ import { startDiceRoll, stopDiceRoll, startD20Roll, stopD20Roll, parseDieType } 
 const METADATA_KEY = "com.dnd-hotbar/character";
 const INIT_METADATA_KEY = "com.dnd-hotbar/initiative";
 const COND_METADATA_KEY = "com.dnd-hotbar/conditions";
+const SKULL_METADATA_KEY = "com.dnd-hotbar/skull";
 const PROXY_URL = import.meta.env.VITE_PROXY_URL || "";
 const DICE_CHANNEL = "com.dnd-hotbar/dice";
 const DICE_MODAL_ID = "com.dnd-hotbar/dice-modal";
@@ -381,6 +383,13 @@ async function resolveAoeDamage(fullDamage) {
   for (const r of results) {
     const dmg = r.saved ? halfDamage : fullDamage;
     if (dmg > 0) await showFloatingDamage(r.token.id, dmg, "Force", { isSpell: true });
+    // Add skull if token dropped to 0 HP
+    if (r.char) {
+      const meta = r.token.metadata?.[METADATA_KEY];
+      if (meta?.character?.hp?.current === 0) {
+        addSkullToToken(r.token.id);
+      }
+    }
   }
 
   showCombatOverlay("Damage Applied!", `${fullDamage} to failed, ${halfDamage} to saved`);
@@ -759,20 +768,58 @@ async function spinToken(tokenId, { degrees = 15, duration = 300 } = {}) {
 }
 
 // Combined effect sequences
+async function flashRedToken(tokenId, { flashes = 3, duration = 600 } = {}) {
+  try {
+    const items = await OBR.scene.items.getItems([tokenId]);
+    if (!items[0]) return;
+    const origTint = items[0].style?.tintColor || null;
+    const origOpacity = items[0].style?.tintOpacity ?? 0;
+    const flashDur = duration / (flashes * 2);
+
+    for (let i = 0; i < flashes; i++) {
+      // Flash red
+      await OBR.scene.items.updateItems([tokenId], (items) => {
+        if (!items[0].style) items[0].style = {};
+        items[0].style.tintColor = "#ff0000";
+        items[0].style.tintOpacity = 0.7;
+      });
+      await sleep(flashDur);
+      // Flash back
+      await OBR.scene.items.updateItems([tokenId], (items) => {
+        if (!items[0].style) items[0].style = {};
+        items[0].style.tintColor = origTint;
+        items[0].style.tintOpacity = origOpacity;
+      });
+      if (i < flashes - 1) await sleep(flashDur);
+    }
+
+    // Ensure restored to original
+    await OBR.scene.items.updateItems([tokenId], (items) => {
+      if (!items[0].style) items[0].style = {};
+      items[0].style.tintColor = origTint;
+      items[0].style.tintOpacity = origOpacity;
+    });
+  } catch (err) {
+    console.warn("flashRedToken error:", err);
+  }
+}
+
 async function tokenHitEffect(tokenId) {
-  // Shake + pulse simultaneously
+  // Shake + pulse + red flash simultaneously
   await Promise.all([
     shakeToken(tokenId, { intensity: 12, steps: 6, duration: 350 }),
     pulseToken(tokenId, { scaleFactor: 1.15, duration: 300 }),
+    flashRedToken(tokenId, { flashes: 2, duration: 400 }),
   ]);
 }
 
 async function tokenCritEffect(tokenId) {
-  // Big shake + big pulse + spin — dramatic!
+  // Big shake + big pulse + spin + intense red flash — dramatic!
   await Promise.all([
     shakeToken(tokenId, { intensity: 20, steps: 10, duration: 600 }),
     pulseToken(tokenId, { scaleFactor: 1.35, duration: 400 }),
     spinToken(tokenId, { degrees: 20, duration: 500 }),
+    flashRedToken(tokenId, { flashes: 4, duration: 700 }),
   ]);
 }
 
@@ -782,24 +829,72 @@ async function tokenMissEffect(tokenId) {
 }
 
 async function tokenDownEffect(tokenId) {
-  // Token "collapses" — shrink + drop down
+  // Token "collapses" — shrink + red flash + drop down
   try {
     const items = await OBR.scene.items.getItems([tokenId]);
     if (!items[0]) return;
     const origScale = { x: items[0].scale.x, y: items[0].scale.y };
 
-    // Shrink dramatically
-    await OBR.scene.items.updateItems([tokenId], (items) => {
-      items[0].scale = { x: origScale.x * 0.6, y: origScale.y * 0.6 };
-    });
-    await sleep(400);
-
-    // Restore (the token is "down" but still on the board)
-    await OBR.scene.items.updateItems([tokenId], (items) => {
-      items[0].scale = origScale;
-    });
+    // Red flash + shrink simultaneously
+    await Promise.all([
+      flashRedToken(tokenId, { flashes: 5, duration: 800 }),
+      (async () => {
+        await OBR.scene.items.updateItems([tokenId], (items) => {
+          items[0].scale = { x: origScale.x * 0.6, y: origScale.y * 0.6 };
+        });
+        await sleep(400);
+        await OBR.scene.items.updateItems([tokenId], (items) => {
+          items[0].scale = origScale;
+        });
+      })(),
+    ]);
   } catch (err) {
     console.warn("tokenDownEffect error:", err);
+  }
+}
+
+async function addSkullToToken(tokenId) {
+  try {
+    // Remove existing skull first (avoid duplicates)
+    await removeSkullFromToken(tokenId);
+
+    const items = await OBR.scene.items.getItems([tokenId]);
+    if (!items[0]) return;
+
+    const skull = buildText()
+      .plainText("💀")
+      .fontSize(48)
+      .textAlign("CENTER")
+      .textAlignVertical("MIDDLE")
+      .width(100)
+      .height(100)
+      .fillColor("#00000000")
+      .fillOpacity(0)
+      .strokeWidth(0)
+      .position({ x: items[0].position.x, y: items[0].position.y })
+      .attachedTo(tokenId)
+      .locked(true)
+      .disableHit(true)
+      .layer("ATTACHMENT")
+      .metadata({ [SKULL_METADATA_KEY]: { tokenId } })
+      .build();
+
+    await OBR.scene.items.addItems([skull]);
+  } catch (err) {
+    console.warn("addSkullToToken error:", err);
+  }
+}
+
+async function removeSkullFromToken(tokenId) {
+  try {
+    const allItems = await OBR.scene.items.getItems((item) =>
+      item.metadata?.[SKULL_METADATA_KEY]?.tokenId === tokenId
+    );
+    if (allItems.length > 0) {
+      await OBR.scene.items.deleteItems(allItems.map((i) => i.id));
+    }
+  } catch (err) {
+    console.warn("removeSkullFromToken error:", err);
   }
 }
 
@@ -891,6 +986,13 @@ async function applyHpChange(newCurrent, newMax = null, newTemp = null, label = 
     if (isHeal) playHealEffect();
     else { playHitEffect("bludgeoning"); screenShake("light"); }
     await showFloatingDamage(currentTokenId, Math.abs(delta), null, { isHeal });
+
+    // Skull management: add on down, remove on heal
+    if (finalCurrent === 0 && oldCurrent > 0) {
+      addSkullToToken(currentTokenId);
+    } else if (finalCurrent > 0 && oldCurrent === 0) {
+      removeSkullFromToken(currentTokenId);
+    }
   }
 
   logCombat(`<strong>${currentCharData.name}</strong> ${label}: <strong>${oldCurrent}</strong>→<strong>${finalCurrent}</strong>/${finalMax} HP`, isHealLog(delta));
@@ -1732,36 +1834,40 @@ async function castSingleTargetSaveSpell(targetToken) {
 
 async function rollAttackD20(label, atkBonus, targetAC, targetName) {
   // Roll raw d20
-  const { diceTotal } = rollDiceValues("1d20");
+  let diceTotal;
+  let used3D = false;
+
+  // Try 3D dice-box first
+  if (diceReady && diceBox) {
+    try {
+      show3DOverlay(label);
+
+      const results = await Promise.race([
+        diceBox.roll("1d20"),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+      ]);
+      diceTotal = results.reduce((sum, r) => sum + r.value, 0);
+      used3D = true;
+      playSfx("dice-hit");
+      await new Promise((r) => setTimeout(r, 800));
+    } catch (err) {
+      console.warn("[dice] 3D attack roll failed, using canvas:", err.message);
+      hide3DOverlay();
+    }
+  }
+
+  // Fallback to canvas
+  if (!used3D) {
+    diceTotal = rollDiceValues("1d20").diceTotal;
+  }
+
   const natValue = diceTotal;
   const finalTotal = diceTotal + atkBonus;
 
-  // Show bouncing d20 animation
   const result = {
     notation: "1d20", diceTotal, modifier: atkBonus, finalTotal, natValue,
     charName: attackerData?.name || "", label, rollId: crypto.randomUUID(),
   };
-
-  // Display via canvas d20 or 3D dice-box
-  let used3D = false;
-  if (diceReady && diceBox) {
-    try {
-      diceOverlay.className = "visible";
-      dice3dLabel.textContent = label;
-      dice3dResult.classList.remove("visible");
-      dice3dResult.innerHTML = "";
-      try { diceBox.clear(); } catch {}
-      await Promise.race([
-        diceBox.roll("1d20"),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000)),
-      ]);
-      used3D = true;
-      playSfx("dice-hit");
-      await new Promise((r) => setTimeout(r, 600));
-    } catch {
-      diceOverlay.className = "";
-    }
-  }
 
   // SFX
   if (natValue === 20) setTimeout(() => playSfx("crit"), 150);
@@ -1769,7 +1875,8 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
 
   if (used3D) {
     show3DResult(label, result);
-    await new Promise((r) => setTimeout(r, 1500));
+    // Hold 3D result for 5 seconds
+    await new Promise((r) => setTimeout(r, 5000));
   } else {
     showDiceResultDisplay(label, result, "d20");
     // Wait for dice animation (2.8s) + result hold (5s)
@@ -1787,11 +1894,7 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
   logCombat(`<strong>${attackerData.name}</strong> rolls to hit: ${diceTotal}${modStr} = <strong>${finalTotal}</strong> (${hitStr})`, "info");
 
   // Hide dice display
-  if (used3D) {
-    diceOverlay.className = "";
-    dice3dResult.classList.remove("visible");
-    try { diceBox?.clear(); } catch {}
-  }
+  if (used3D) hide3DOverlay();
 
   // Determine outcome
   const isCrit = natValue === 20;
@@ -1841,6 +1944,7 @@ async function resolveAttackRoll(result) {
         await syncInitiativeHP();
         logCombat(`${targetName}: ${targetData.hp.current} → <strong>${newCurrent}</strong>/${targetData.hp.max} HP`, "damage");
         await OBR.notification.show(`${attackerData.name} grazes ${targetName} for ${grazeDmg} damage!`, "WARNING");
+        if (newCurrent === 0) addSkullToToken(targetTokenId);
       }
       setTimeout(() => resetCombat(), 2500);
       return;
@@ -1936,52 +2040,60 @@ async function rollDamageDice(isCrit, targetName) {
     notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
   }
 
-  // Roll the dice (with individual results for multi-dice display)
-  const { diceTotal, individualResults } = rollDiceValues(notation);
-  const totalDamage = Math.max(0, diceTotal + damageMod);
+  let diceTotal, individualResults;
+  let used3D = false;
 
+  // Try 3D dice-box first
+  if (diceReady && diceBox) {
+    try {
+      show3DOverlay(`${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`);
+
+      const results = await Promise.race([
+        diceBox.roll(notation),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+      ]);
+      diceTotal = results.reduce((sum, r) => sum + r.value, 0);
+      individualResults = results.map(r => r.value);
+      used3D = true;
+      playSfx("dice-hit");
+      await new Promise((r) => setTimeout(r, 800));
+    } catch (err) {
+      console.warn("[dice] 3D damage roll failed, using canvas:", err.message);
+      hide3DOverlay();
+    }
+  }
+
+  // Fallback to canvas
+  if (!used3D) {
+    const rolled = rollDiceValues(notation);
+    diceTotal = rolled.diceTotal;
+    individualResults = rolled.individualResults;
+  }
+
+  const totalDamage = Math.max(0, diceTotal + damageMod);
   const label = `${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`;
   const modStr = damageMod > 0 ? `+${damageMod}` : damageMod < 0 ? `${damageMod}` : "";
 
-  // Show damage roll with correct die shape
   const result = {
     notation, diceTotal, modifier: damageMod, finalTotal: totalDamage,
     natValue: null, charName: attackerData?.name || "", label,
     rollId: crypto.randomUUID(), individualResults,
   };
 
-  let used3D = false;
-  if (diceReady && diceBox) {
-    try {
-      diceOverlay.className = "visible";
-      dice3dLabel.textContent = label;
-      dice3dResult.classList.remove("visible");
-      dice3dResult.innerHTML = "";
-      try { diceBox.clear(); } catch {}
-      await Promise.race([
-        diceBox.roll(notation),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000)),
-      ]);
-      used3D = true;
-      playSfx("dice-hit");
-      await new Promise((r) => setTimeout(r, 600));
-    } catch {
-      diceOverlay.className = "";
-    }
-  }
-
   if (used3D) {
     show3DResult(label, result);
-    await new Promise((r) => setTimeout(r, 1500));
+    // Hold 3D result for 5 seconds
+    await new Promise((r) => setTimeout(r, 5000));
   } else {
     showDiceResultDisplay(label, result, dieType);
     // Wait for dice animation (2.8s) + result hold (5s)
     await new Promise((r) => setTimeout(r, 8000));
   }
 
-  // Log damage roll
+  // Log damage roll with individual dice
+  const diceStr = individualResults.length > 1 ? `[${individualResults.join(", ")}]` : `${diceTotal}`;
   logCombat(
-    `<strong>${attackerData.name}</strong> ${weapon.name}: ${notation}${modStr} = <strong class="damage">${totalDamage}</strong> ${damageType}${isCrit ? " (CRIT!)" : ""}`,
+    `<strong>${attackerData.name}</strong> ${weapon.name} damage: ${notation} → ${diceStr}${modStr} = <strong class="damage">${totalDamage}</strong> ${damageType}${isCrit ? " (CRIT!)" : ""}`,
     isCrit ? "crit" : "damage"
   );
 
@@ -1989,12 +2101,7 @@ async function rollDamageDice(isCrit, targetName) {
   OBR.broadcast.sendMessage(SFX_CHANNEL, { sound: "dice-hit" }).catch(() => {});
 
   // Hide dice
-  if (used3D) {
-    await new Promise((r) => setTimeout(r, 500));
-    diceOverlay.className = "";
-    dice3dResult.classList.remove("visible");
-    try { diceBox?.clear(); } catch {}
-  }
+  if (used3D) hide3DOverlay();
 
   // Apply damage
   await resolveDamage({ finalTotal: totalDamage });
@@ -2072,7 +2179,10 @@ async function resolveDamage(result) {
     await broadcastSfx("damage");
     await showFloatingDamage(targetTokenId, damage, selectedWeapon?.damageType || "Slashing", { isCrit });
     // If target is down, play collapse effect
-    if (isDown && targetTokenId) tokenDownEffect(targetTokenId);
+    if (isDown && targetTokenId) {
+      tokenDownEffect(targetTokenId);
+      addSkullToToken(targetTokenId);
+    }
   }, 400);
 
   // ── Weapon Mastery effects on hit ──
@@ -2163,35 +2273,75 @@ async function initDiceBox() {
   if (diceReady || diceInitializing) return;
   diceInitializing = true;
   try {
-    // Determine base URL for assets (works in both dev and production/iframe)
+    // Check WebGL support first
+    const testCanvas = document.createElement("canvas");
+    const gl = testCanvas.getContext("webgl") || testCanvas.getContext("experimental-webgl");
+    if (!gl) throw new Error("WebGL not supported");
+
+    // Resolve asset paths: origin = page origin, assetPath = relative path to assets
     const base = import.meta.env.BASE_URL || "/";
-    const assetPath = `${base}dice-assets/assets/`;
-    const origin = `${base}dice-assets/`;
+    const origin = window.location.origin + base;
+    const assetPath = "dice-assets/assets/";
 
-    console.log("[dice] Initializing dice-box with:", { assetPath, origin });
+    console.log("[dice] Initializing dice-box with:", { origin, assetPath });
 
-    diceBox = new DiceBox("#dice-box", {
+    // Make container visible so dice-box can create WebGL canvas with proper dimensions
+    const overlay = document.getElementById("dice-overlay");
+    overlay.style.cssText = "display:block;position:absolute;left:-9999px;width:500px;height:320px;";
+
+    // v1.1+ new API: single config object
+    diceBox = new DiceBox({
+      container: "#dice-box",
       assetPath,
       origin,
-      scale: 5,
+      scale: 6,
       theme: "default",
+      themeColor: "#e94560",
       offscreen: false,       // Force onscreen mode (no Web Worker — works in iframes)
-      gravity: 2,
-      mass: 1,
-      friction: 0.8,
-      restitution: 0.5,
-      linearDamping: 0.5,
-      angularDamping: 0.4,
-      settleTimeout: 4000,
+      enableShadows: true,
+      shadowTransparency: 0.7,
+      lightIntensity: 1.2,
+      gravity: 3,
+      delay: 10,
+      settleTimeout: 5000,
+      suspendSimulation: false,
     });
     await diceBox.init();
+
+    // Hide again — CSS class will control visibility
+    overlay.style.cssText = "";
+    overlay.className = "";
+
     diceReady = true;
-    console.log("[dice] 3D dice-box initialized successfully");
+    console.log("[dice] ✅ 3D dice-box initialized successfully");
   } catch (err) {
-    console.warn("[dice] 3D dice init failed, will use text fallback:", err.message);
+    console.warn("[dice] 3D dice init failed, will use canvas fallback:", err.message, err);
+    // Restore overlay styles
+    const overlay = document.getElementById("dice-overlay");
+    if (overlay) overlay.style.cssText = "";
     diceReady = false;
   }
   diceInitializing = false;
+}
+
+function show3DOverlay(label) {
+  diceOverlay.className = "visible";
+  dice3dLabel.textContent = label || "";
+  dice3dResult.classList.remove("visible");
+  dice3dResult.innerHTML = "";
+  try { diceBox?.clear(); } catch {}
+  // Trigger resize so canvas matches container size
+  if (diceBox) {
+    requestAnimationFrame(() => {
+      try { window.dispatchEvent(new Event("resize")); } catch {}
+    });
+  }
+}
+
+function hide3DOverlay() {
+  diceOverlay.className = "";
+  dice3dResult.classList.remove("visible");
+  try { diceBox?.clear(); } catch {}
 }
 
 function rollDiceValues(notation) {
@@ -2284,8 +2434,9 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
   const rid = rollId || crypto.randomUUID();
   pendingRollId = rid;
 
-  const { diceTotal: fallbackTotal, isSingleD20, individualResults } = rollDiceValues(notation);
+  const { diceTotal: fallbackTotal, isSingleD20, individualResults: fallbackIndividual } = rollDiceValues(notation);
   let diceTotal = fallbackTotal;
+  let individualResults = fallbackIndividual;
   let used3D = false;
 
   const charName = attackerData?.name || currentCharData?.name || "";
@@ -2293,23 +2444,21 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
   // Try embedded 3D dice-box first
   if (diceReady && diceBox) {
     try {
-      diceOverlay.className = "visible";
-      dice3dLabel.textContent = label || notation;
-      dice3dResult.classList.remove("visible");
-      dice3dResult.innerHTML = "";
-      try { diceBox.clear(); } catch {}
+      show3DOverlay(label || notation);
 
       const results = await Promise.race([
         diceBox.roll(notation),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
       ]);
       diceTotal = results.reduce((sum, r) => sum + r.value, 0);
+      individualResults = results.map(r => r.value);
       used3D = true;
       playSfx("dice-hit");
-      await new Promise((r) => setTimeout(r, 600));
+      // Let dice settle visually
+      await new Promise((r) => setTimeout(r, 800));
     } catch (err) {
-      console.warn("[dice] 3D roll failed, using canvas d20:", err.message);
-      diceOverlay.className = "";
+      console.warn("[dice] 3D roll failed, using canvas fallback:", err.message);
+      hide3DOverlay();
     }
   }
 
@@ -2325,11 +2474,12 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
   if (natValue === 20) setTimeout(() => playSfx("crit"), 150);
   else if (natValue === 1) setTimeout(() => playSfx("miss"), 150);
 
-  // Show result with correct die shape
+  // Show result
   const dieType = parseDieType(notation) || "d20";
   if (used3D) {
     show3DResult(label, result);
-    await new Promise((r) => setTimeout(r, 1500));
+    // Hold 3D result for 5 seconds
+    await new Promise((r) => setTimeout(r, 5000));
   } else {
     showDiceResultDisplay(label, result, dieType);
     // Wait for dice animation (2.8s) + result display (5s)
@@ -2346,16 +2496,23 @@ async function rollDice(notation, label, modifier = 0, rollId = null) {
     : `Rolled ${notation}${modStr}: ${finalTotal}`;
   OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
 
+  // Log to combat log for all players
+  const diceStr = individualResults.length > 1 ? `[${individualResults.join(", ")}]` : `${diceTotal}`;
+  const logModStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
+  const logTotal = modifier !== 0 ? ` = <strong>${finalTotal}</strong>` : "";
+  let natTag = "";
+  if (natValue === 20) natTag = ' <strong class="crit">NAT 20!</strong>';
+  else if (natValue === 1) natTag = ' <strong class="miss">NAT 1</strong>';
+  const who = charName ? `<strong>${charName}</strong>` : "🎲";
+  const logLabel = label ? ` ${label}:` : "";
+  logCombat(`${who}${logLabel} ${notation} → ${diceStr}${logModStr}${logTotal}${natTag}`, natValue === 20 ? "crit" : natValue === 1 ? "miss" : "info");
+
   // Wait for result to be visible for 5 seconds total
   await new Promise((r) => setTimeout(r, !used3D ? 5000 : 0));
 
   // Auto-hide 3D overlay
   if (used3D) {
-    setTimeout(() => {
-      diceOverlay.className = "";
-      dice3dResult.classList.remove("visible");
-      try { diceBox?.clear(); } catch {}
-    }, 2000);
+    setTimeout(() => hide3DOverlay(), 500);
   }
 }
 

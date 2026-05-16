@@ -1,6 +1,7 @@
 // ════════════════════════════════════════
 // d20renderer.js — Multi-dice renderer (d4, d6, d8, d10, d12, d20)
 // Black glossy dice with white numbers, bouncing animation
+// Enhanced 3D rendering with bevels, gradients, and depth
 // ════════════════════════════════════════
 
 const PHI = (1 + Math.sqrt(5)) / 2;
@@ -12,9 +13,13 @@ function rotateY(v, a) { const c = Math.cos(a), s = Math.sin(a); return [v[0]*c 
 function rotateZ(v, a) { const c = Math.cos(a), s = Math.sin(a); return [v[0]*c - v[1]*s, v[0]*s + v[1]*c, v[2]]; }
 function cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
 function sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+function add(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
 function dot(a, b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
+function scale3(v, s) { return [v[0]*s, v[1]*s, v[2]*s]; }
 function norm(v) { const len = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]); return len > 0 ? [v[0]/len, v[1]/len, v[2]/len] : [0,0,0]; }
+function len3(v) { return Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]); }
 function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 function normalizeVerts(raw) {
   return raw.map(([x, y, z]) => {
@@ -121,9 +126,10 @@ const DICE = {
   d20: { verts: D20_VERTS, faces: D20_FACES, numbers: D20_NUMBERS, scale: 0.30, fontScale: 1.0 },
 };
 
-// ── Lighting ──
-const LIGHT_MAIN = norm([0.4, 0.7, 0.9]);
-const LIGHT_RIM  = norm([-0.5, -0.3, 0.4]);
+// ── Lighting (multi-light setup) ──
+const LIGHT_MAIN = norm([0.4, 0.7, 0.9]);       // Key light (top-right-front)
+const LIGHT_FILL = norm([-0.6, 0.2, 0.5]);       // Fill light (left-front)
+const LIGHT_RIM  = norm([-0.3, -0.5, -0.6]);     // Rim/back light
 
 // ── Particles ──
 const MAX_PARTICLES = 60;
@@ -162,13 +168,14 @@ function spawnBurst(x, y, n) {
 }
 
 // ════════════════════════════════════════
-// GENERIC DICE RENDERER
+// ENHANCED 3D DICE RENDERER
 // ════════════════════════════════════════
 
 function drawDice(ctx, dieType, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
   const die = DICE[dieType] || DICE.d20;
   const sz = (w * die.scale) * scale;
 
+  // Transform all vertices
   const transformed = die.verts.map(v => {
     let p = rotateX(v, rx);
     p = rotateY(p, ry);
@@ -176,24 +183,47 @@ function drawDice(ctx, dieType, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
     return p;
   });
 
+  // Build face data with lighting
   const faceData = die.faces.map((face, fi) => {
     const pts3d = face.map(vi => transformed[vi]);
     const pts2d = pts3d.map(p => [cx + p[0] * sz, cy - p[1] * sz]);
     const faceNormal = norm(cross(sub(pts3d[1], pts3d[0]), sub(pts3d[2], pts3d[0])));
     const avgZ = pts3d.reduce((s, p) => s + p[2], 0) / pts3d.length;
-
-    const diff = Math.max(0, dot(faceNormal, LIGHT_MAIN));
-    const rim = Math.pow(Math.max(0, dot(faceNormal, LIGHT_RIM)), 2) * 0.3;
-    const R = [
-      2 * faceNormal[0] * dot(faceNormal, LIGHT_MAIN) - LIGHT_MAIN[0],
-      2 * faceNormal[1] * dot(faceNormal, LIGHT_MAIN) - LIGHT_MAIN[1],
-      2 * faceNormal[2] * dot(faceNormal, LIGHT_MAIN) - LIGHT_MAIN[2],
+    const center3d = [
+      pts3d.reduce((s, p) => s + p[0], 0) / pts3d.length,
+      pts3d.reduce((s, p) => s + p[1], 0) / pts3d.length,
+      pts3d.reduce((s, p) => s + p[2], 0) / pts3d.length,
     ];
-    const spec = Math.pow(Math.max(0, dot(norm(R), [0, 0, 1])), 40) * 0.9;
-    const viewDot = Math.abs(faceNormal[2]);
-    const fresnel = Math.pow(1 - viewDot, 3) * 0.15;
 
-    return { pts2d, pts3d, normal: faceNormal, avgZ, diff, rim, spec, fresnel, number: die.numbers[fi] };
+    // Multi-light illumination
+    const diffMain = Math.max(0, dot(faceNormal, LIGHT_MAIN));
+    const diffFill = Math.max(0, dot(faceNormal, LIGHT_FILL)) * 0.3;
+    const rim = Math.pow(Math.max(0, -dot(faceNormal, LIGHT_RIM)), 2.5) * 0.25;
+
+    // Specular reflection (Blinn-Phong)
+    const halfVec = norm(add(LIGHT_MAIN, [0, 0, 1]));
+    const spec = Math.pow(Math.max(0, dot(faceNormal, halfVec)), 80) * 1.2;
+
+    // Secondary specular from fill light
+    const halfVec2 = norm(add(LIGHT_FILL, [0, 0, 1]));
+    const spec2 = Math.pow(Math.max(0, dot(faceNormal, halfVec2)), 60) * 0.3;
+
+    // Fresnel (edge glow)
+    const viewDot = Math.abs(faceNormal[2]);
+    const fresnel = Math.pow(1 - viewDot, 4) * 0.2;
+
+    // Per-vertex normals approximation for gradient shading
+    const vertLighting = pts3d.map(p => {
+      const vn = norm(p); // approximate vertex normal (works for convex shapes)
+      return Math.max(0, dot(vn, LIGHT_MAIN)) * 0.5 + 0.5;
+    });
+
+    return {
+      face, pts2d, pts3d, normal: faceNormal, avgZ, center3d,
+      diffMain, diffFill, rim, spec, spec2, fresnel, viewDot,
+      vertLighting,
+      number: die.numbers[fi],
+    };
   });
 
   // Swap result onto front-facing face
@@ -212,27 +242,66 @@ function drawDice(ctx, dieType, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
 
   faceData.sort((a, b) => a.avgZ - b.avgZ);
 
-  // Shadow
-  const shadowGrad = ctx.createRadialGradient(cx + 4, cy + 8, 0, cx + 4, cy + 8, sz * 1.2);
-  shadowGrad.addColorStop(0, "rgba(0,0,0,0.3)");
+  // ── Drop shadow (soft elliptical) ──
+  ctx.save();
+  const shadowY = cy + sz * 0.7;
+  const shadowRx = sz * 0.8;
+  const shadowRy = sz * 0.25;
+  const shadowGrad = ctx.createRadialGradient(cx + 2, shadowY, 0, cx + 2, shadowY, shadowRx);
+  shadowGrad.addColorStop(0, "rgba(0,0,0,0.35)");
+  shadowGrad.addColorStop(0.5, "rgba(0,0,0,0.15)");
   shadowGrad.addColorStop(1, "transparent");
+  ctx.save();
+  ctx.translate(cx + 2, shadowY);
+  ctx.scale(1, shadowRy / shadowRx);
+  ctx.translate(-(cx + 2), -shadowY);
   ctx.fillStyle = shadowGrad;
-  ctx.fillRect(cx - sz * 1.5, cy - sz * 1.5, sz * 3, sz * 3);
+  ctx.fillRect(cx - shadowRx * 1.5, shadowY - shadowRx * 1.5, shadowRx * 3, shadowRx * 3);
+  ctx.restore();
+  ctx.restore();
 
-  // Draw each face
+  // ── Collect edges for silhouette/bevel pass ──
+  const edgeMap = new Map();
   for (const f of faceData) {
-    if (f.normal[2] < -0.05) continue;
+    const n = f.pts2d.length;
+    for (let i = 0; i < n; i++) {
+      const a = f.face[i], b = f.face[(i + 1) % n];
+      const key = Math.min(a, b) + "," + Math.max(a, b);
+      if (!edgeMap.has(key)) edgeMap.set(key, []);
+      edgeMap.get(key).push(f);
+    }
+  }
 
-    const { pts2d, diff, rim, spec, fresnel, number } = f;
+  // ── Draw each face ──
+  for (const f of faceData) {
+    if (f.normal[2] < -0.1) continue;
 
-    // Black glossy surface
-    const ambient = 0.08;
-    const light = ambient + diff * 0.35 + rim;
-    const r = Math.min(255, Math.round(lerp(8, 50, light) + 200 * spec + 60 * fresnel));
-    const g = Math.min(255, Math.round(lerp(8, 45, light) + 200 * spec + 60 * fresnel));
-    const b = Math.min(255, Math.round(lerp(12, 55, light) + 220 * spec + 80 * fresnel));
+    const { pts2d, diffMain, diffFill, rim, spec, spec2, fresnel, viewDot, number, vertLighting } = f;
+    const cenX = pts2d.reduce((s, p) => s + p[0], 0) / pts2d.length;
+    const cenY = pts2d.reduce((s, p) => s + p[1], 0) / pts2d.length;
 
-    // Draw polygon (triangle, quad, or pentagon)
+    // ── Face fill: gradient from center-lit to edge-dark ──
+    const ambient = 0.06;
+    const light = ambient + diffMain * 0.38 + diffFill + rim;
+
+    // Base dark color (glossy black)
+    const baseR = lerp(6, 42, light);
+    const baseG = lerp(6, 38, light);
+    const baseB = lerp(10, 50, light);
+
+    // Specular contribution
+    const specBoost = (spec + spec2) * 0.7;
+    const fresnelBoost = fresnel;
+    const r = clamp(Math.round(baseR + 255 * specBoost + 80 * fresnelBoost), 0, 255);
+    const g = clamp(Math.round(baseG + 255 * specBoost + 80 * fresnelBoost), 0, 255);
+    const b = clamp(Math.round(baseB + 280 * specBoost + 100 * fresnelBoost), 0, 255);
+
+    // Lighter color for gradient highlight side
+    const hlR = clamp(Math.round(baseR * 1.8 + 255 * specBoost + 120 * fresnelBoost), 0, 255);
+    const hlG = clamp(Math.round(baseG * 1.8 + 255 * specBoost + 120 * fresnelBoost), 0, 255);
+    const hlB = clamp(Math.round(baseB * 1.8 + 280 * specBoost + 150 * fresnelBoost), 0, 255);
+
+    // Draw polygon path
     ctx.beginPath();
     ctx.moveTo(pts2d[0][0], pts2d[0][1]);
     for (let i = 1; i < pts2d.length; i++) {
@@ -240,47 +309,187 @@ function drawDice(ctx, dieType, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
     }
     ctx.closePath();
 
-    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    // Gradient fill across the face for 3D curvature feel
+    const gradAngle = Math.atan2(f.normal[1], f.normal[0]);
+    const gradDist = sz * 0.5;
+    const gx1 = cenX - Math.cos(gradAngle) * gradDist;
+    const gy1 = cenY + Math.sin(gradAngle) * gradDist;
+    const gx2 = cenX + Math.cos(gradAngle) * gradDist;
+    const gy2 = cenY - Math.sin(gradAngle) * gradDist;
+    const faceGrad = ctx.createLinearGradient(gx1, gy1, gx2, gy2);
+    faceGrad.addColorStop(0, `rgb(${hlR},${hlG},${hlB})`);
+    faceGrad.addColorStop(0.5, `rgb(${r},${g},${b})`);
+    faceGrad.addColorStop(1, `rgb(${Math.round(baseR * 0.5)},${Math.round(baseG * 0.5)},${Math.round(baseB * 0.5)})`);
+    ctx.fillStyle = faceGrad;
     ctx.fill();
 
-    // Edge highlight
-    const edgeAlpha = 0.15 + spec * 0.3 + fresnel;
-    ctx.strokeStyle = `rgba(120, 130, 150, ${Math.min(0.5, edgeAlpha)})`;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    // ── Inner bevel / chamfer ──
+    // Inset the polygon slightly and draw a lighter border for bevel illusion
+    if (viewDot > 0.05) {
+      const bevelInset = 1.5;
+      const insetPts = pts2d.map(p => {
+        const dx = p[0] - cenX, dy = p[1] - cenY;
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d < 0.01) return p;
+        return [p[0] - (dx/d) * bevelInset, p[1] - (dy/d) * bevelInset];
+      });
 
-    // Specular spot
-    if (spec > 0.1) {
-      const cenX = pts2d.reduce((s, p) => s + p[0], 0) / pts2d.length;
-      const cenY = pts2d.reduce((s, p) => s + p[1], 0) / pts2d.length;
-      const spotR = sz * 0.15 * spec;
-      const spotGrad = ctx.createRadialGradient(cenX - spotR * 0.5, cenY - spotR * 0.5, 0, cenX, cenY, spotR * 2);
-      spotGrad.addColorStop(0, `rgba(255,255,255,${spec * 0.25})`);
-      spotGrad.addColorStop(1, "transparent");
-      ctx.fillStyle = spotGrad;
-      ctx.fill();
+      // Light bevel on top/left edges
+      ctx.beginPath();
+      ctx.moveTo(pts2d[0][0], pts2d[0][1]);
+      for (let i = 1; i < pts2d.length; i++) ctx.lineTo(pts2d[i][0], pts2d[i][1]);
+      ctx.closePath();
+      const bevelAlpha = clamp(0.08 + spec * 0.15 + diffMain * 0.06, 0, 0.25);
+      ctx.strokeStyle = `rgba(180, 195, 220, ${bevelAlpha})`;
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+
+      // Dark inner edge for depth
+      ctx.beginPath();
+      ctx.moveTo(insetPts[0][0], insetPts[0][1]);
+      for (let i = 1; i < insetPts.length; i++) ctx.lineTo(insetPts[i][0], insetPts[i][1]);
+      ctx.closePath();
+      ctx.strokeStyle = `rgba(0, 0, 0, ${clamp(0.2 - diffMain * 0.1, 0.05, 0.25)})`;
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
     }
 
-    // Number
-    if (f.normal[2] > 0.12) {
-      const cenX = pts2d.reduce((s, p) => s + p[0], 0) / pts2d.length;
-      const cenY = pts2d.reduce((s, p) => s + p[1], 0) / pts2d.length;
+    // ── Specular highlight (glossy spot) ──
+    if (spec > 0.05) {
+      const spotR = sz * 0.22 * Math.sqrt(spec);
+      const spotGrad = ctx.createRadialGradient(
+        cenX - spotR * 0.3, cenY - spotR * 0.4, 0,
+        cenX, cenY, spotR * 2.2
+      );
+      spotGrad.addColorStop(0, `rgba(255,255,255,${clamp(spec * 0.55, 0, 0.6)})`);
+      spotGrad.addColorStop(0.3, `rgba(220,230,255,${clamp(spec * 0.2, 0, 0.3)})`);
+      spotGrad.addColorStop(1, "transparent");
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(pts2d[0][0], pts2d[0][1]);
+      for (let i = 1; i < pts2d.length; i++) ctx.lineTo(pts2d[i][0], pts2d[i][1]);
+      ctx.closePath();
+      ctx.clip();
+      ctx.fillStyle = spotGrad;
+      ctx.fillRect(cenX - spotR * 3, cenY - spotR * 3, spotR * 6, spotR * 6);
+      ctx.restore();
+    }
+
+    // ── Secondary specular (fill light) ──
+    if (spec2 > 0.05) {
+      const spot2R = sz * 0.15 * Math.sqrt(spec2);
+      const spot2Grad = ctx.createRadialGradient(
+        cenX + spot2R * 0.5, cenY - spot2R * 0.3, 0,
+        cenX + spot2R, cenY, spot2R * 2
+      );
+      spot2Grad.addColorStop(0, `rgba(180,200,255,${clamp(spec2 * 0.3, 0, 0.2)})`);
+      spot2Grad.addColorStop(1, "transparent");
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(pts2d[0][0], pts2d[0][1]);
+      for (let i = 1; i < pts2d.length; i++) ctx.lineTo(pts2d[i][0], pts2d[i][1]);
+      ctx.closePath();
+      ctx.clip();
+      ctx.fillStyle = spot2Grad;
+      ctx.fillRect(cenX - spot2R * 3, cenY - spot2R * 3, spot2R * 6, spot2R * 6);
+      ctx.restore();
+    }
+
+    // ── Fresnel rim glow ──
+    if (fresnel > 0.02) {
+      const rimGrad = ctx.createRadialGradient(cenX, cenY, sz * 0.15, cenX, cenY, sz * 0.55);
+      rimGrad.addColorStop(0, "transparent");
+      rimGrad.addColorStop(0.7, "transparent");
+      rimGrad.addColorStop(1, `rgba(100,140,200,${clamp(fresnel * 0.7, 0, 0.15)})`);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(pts2d[0][0], pts2d[0][1]);
+      for (let i = 1; i < pts2d.length; i++) ctx.lineTo(pts2d[i][0], pts2d[i][1]);
+      ctx.closePath();
+      ctx.clip();
+      ctx.fillStyle = rimGrad;
+      ctx.fillRect(cenX - sz, cenY - sz, sz * 2, sz * 2);
+      ctx.restore();
+    }
+
+    // ── Number rendering (engraved look with glow) ──
+    if (f.normal[2] > 0.1) {
       const fontSize = Math.round(14 * scale * die.fontScale * (0.55 + f.normal[2] * 0.45));
-      const alpha = Math.min(1, (f.normal[2] - 0.12) * 2.5);
+      const alpha = clamp((f.normal[2] - 0.1) * 2.5, 0, 1);
 
       ctx.font = `bold ${fontSize}px 'Segoe UI', system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
-      ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.8})`;
-      ctx.fillText(String(number), cenX + 0.8, cenY + 0.8);
+      // Engraved shadow (dark behind, slightly offset down-right)
+      ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.9})`;
+      ctx.fillText(String(number), cenX + 1, cenY + 1.2);
 
+      // Slight inner shadow for depth
+      ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.5})`;
+      ctx.fillText(String(number), cenX - 0.4, cenY - 0.4);
+
+      // Main number (white)
       ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
       ctx.fillText(String(number), cenX, cenY);
 
-      if (spec > 0.2) {
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * spec * 0.3})`;
+      // Subtle glow on specular faces
+      if (spec > 0.1) {
+        ctx.save();
+        ctx.shadowColor = `rgba(200, 220, 255, ${alpha * spec * 0.5})`;
+        ctx.shadowBlur = 4;
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.3})`;
         ctx.fillText(String(number), cenX, cenY);
+        ctx.restore();
+      }
+    }
+  }
+
+  // ── Silhouette edges (draw on top for depth) ──
+  for (const [key, faces] of edgeMap) {
+    if (faces.length !== 2) continue;
+    const [f1, f2] = faces;
+    // Silhouette edge: one face front, one face back
+    const isSilhouette = (f1.normal[2] > 0) !== (f2.normal[2] > 0);
+    // Crease edge: both front-facing but different angles
+    const isCrease = f1.normal[2] > 0 && f2.normal[2] > 0;
+
+    if (!isSilhouette && !isCrease) continue;
+
+    const [aIdx, bIdx] = key.split(",").map(Number);
+    const a2d = [cx + transformed[aIdx][0] * sz, cy - transformed[aIdx][1] * sz];
+    const b2d = [cx + transformed[bIdx][0] * sz, cy - transformed[bIdx][1] * sz];
+
+    if (isSilhouette) {
+      // Strong silhouette outline
+      ctx.beginPath();
+      ctx.moveTo(a2d[0], a2d[1]);
+      ctx.lineTo(b2d[0], b2d[1]);
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.lineWidth = 2.0;
+      ctx.stroke();
+
+      // Subtle light edge on top
+      ctx.beginPath();
+      ctx.moveTo(a2d[0], a2d[1]);
+      ctx.lineTo(b2d[0], b2d[1]);
+      ctx.strokeStyle = "rgba(120, 140, 180, 0.12)";
+      ctx.lineWidth = 1.0;
+      ctx.stroke();
+    } else if (isCrease) {
+      // Subtle crease line between front faces
+      const angleDiff = 1 - dot(f1.normal, f2.normal);
+      if (angleDiff > 0.05) {
+        const creaseAlpha = clamp(angleDiff * 0.4, 0.02, 0.15);
+        ctx.beginPath();
+        ctx.moveTo(a2d[0], a2d[1]);
+        ctx.lineTo(b2d[0], b2d[1]);
+        ctx.strokeStyle = `rgba(0, 0, 0, ${creaseAlpha})`;
+        ctx.lineWidth = 1.0;
+        ctx.stroke();
       }
     }
   }
