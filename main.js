@@ -1041,11 +1041,11 @@ function buildFeaturesList() {
       }
     }
 
-    // Use button for activatable features
+    // Use button — show for any feature with limited uses OR an activation type
     let btnHTML = "";
-    if (feat.maxUses !== null && feat.activationType) {
+    if (feat.maxUses !== null) {
       btnHTML = `<button class="feat-use-btn" data-feat-key="${feat.key}" ${feat.remaining <= 0 ? "disabled" : ""}>Use</button>`;
-    } else if (!feat.maxUses && feat.activationType) {
+    } else if (feat.activationType) {
       btnHTML = `<button class="feat-use-btn" data-feat-key="${feat.key}">Use</button>`;
     }
 

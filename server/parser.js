@@ -613,8 +613,22 @@ function parseFeatures(d, stats, profBonus, classes) {
 
       seen.add(def.name);
 
+      // Check for limited uses
+      const lu = cf.limitedUse || def.limitedUse || null;
+      let maxUses = null, usedCount = 0, resetType = null;
+      if (lu) {
+        maxUses = lu.maxUses || 0;
+        usedCount = lu.numberUsed || 0;
+        if (lu.statModifierUsesId) {
+          const statMod = stats[lu.statModifierUsesId - 1]?.modifier || 0;
+          maxUses += Math.max(1, statMod);
+        }
+        if (lu.useProficiencyBonus) maxUses += profBonus;
+        resetType = RESET_TYPE_NAMES[lu.resetType] || null;
+      }
+
       const snippet = def.snippet || def.description || "";
-      const description = cleanDescription(snippet, null, profBonus);
+      const description = cleanDescription(snippet, maxUses, profBonus);
       if (!description) continue; // Skip empty features
 
       features.push({
@@ -624,10 +638,10 @@ function parseFeatures(d, stats, profBonus, classes) {
         sourceType: cls.definition?.name || cls.subclassDefinition?.name || "Class",
         activationType: null,
         description: description.slice(0, 200),
-        maxUses: null,
-        usedCount: 0,
-        remaining: null,
-        resetType: null,
+        maxUses,
+        usedCount,
+        remaining: maxUses !== null ? Math.max(0, maxUses - usedCount) : null,
+        resetType,
         isAttack: false,
         saveStat: null,
         dice: null,
@@ -641,8 +655,22 @@ function parseFeatures(d, stats, profBonus, classes) {
     if (!def.name || seen.has(def.name)) continue;
     seen.add(def.name);
 
+    // Check for limited uses
+    const lu = trait.limitedUse || def.limitedUse || null;
+    let maxUses = null, usedCount = 0, resetType = null;
+    if (lu) {
+      maxUses = lu.maxUses || 0;
+      usedCount = lu.numberUsed || 0;
+      if (lu.statModifierUsesId) {
+        const statMod = stats[lu.statModifierUsesId - 1]?.modifier || 0;
+        maxUses += Math.max(1, statMod);
+      }
+      if (lu.useProficiencyBonus) maxUses += profBonus;
+      resetType = RESET_TYPE_NAMES[lu.resetType] || null;
+    }
+
     const snippet = def.snippet || def.description || "";
-    const description = cleanDescription(snippet, null, profBonus);
+    const description = cleanDescription(snippet, maxUses, profBonus);
     if (!description) continue;
 
     features.push({
@@ -652,10 +680,10 @@ function parseFeatures(d, stats, profBonus, classes) {
       sourceType: d.race?.fullName || "Race",
       activationType: null,
       description: description.slice(0, 200),
-      maxUses: null,
-      usedCount: 0,
-      remaining: null,
-      resetType: null,
+      maxUses,
+      usedCount,
+      remaining: maxUses !== null ? Math.max(0, maxUses - usedCount) : null,
+      resetType,
       isAttack: false,
       saveStat: null,
       dice: null,
@@ -668,8 +696,22 @@ function parseFeatures(d, stats, profBonus, classes) {
     if (!def.name || seen.has(def.name)) continue;
     seen.add(def.name);
 
+    // Check for limited uses
+    const lu = feat.limitedUse || def.limitedUse || null;
+    let maxUses = null, usedCount = 0, resetType = null;
+    if (lu) {
+      maxUses = lu.maxUses || 0;
+      usedCount = lu.numberUsed || 0;
+      if (lu.statModifierUsesId) {
+        const statMod = stats[lu.statModifierUsesId - 1]?.modifier || 0;
+        maxUses += Math.max(1, statMod);
+      }
+      if (lu.useProficiencyBonus) maxUses += profBonus;
+      resetType = RESET_TYPE_NAMES[lu.resetType] || null;
+    }
+
     const snippet = def.snippet || def.description || "";
-    const description = cleanDescription(snippet, null, profBonus);
+    const description = cleanDescription(snippet, maxUses, profBonus);
     if (!description) continue;
 
     features.push({
@@ -679,10 +721,10 @@ function parseFeatures(d, stats, profBonus, classes) {
       sourceType: "Feat",
       activationType: null,
       description: description.slice(0, 200),
-      maxUses: null,
-      usedCount: 0,
-      remaining: null,
-      resetType: null,
+      maxUses,
+      usedCount,
+      remaining: maxUses !== null ? Math.max(0, maxUses - usedCount) : null,
+      resetType,
       isAttack: false,
       saveStat: null,
       dice: null,
