@@ -73,6 +73,11 @@ const invCurrency = document.getElementById("inv-currency");
 const invFooter = document.getElementById("inv-footer");
 const invClose = document.getElementById("inv-close");
 
+// Features panel
+const featuresPanel = document.getElementById("features-panel");
+const featList = document.getElementById("feat-list");
+const featClose = document.getElementById("feat-close");
+
 // AoE results
 const aoeResults = document.getElementById("aoe-results");
 const aoeTitle = document.getElementById("aoe-title");
@@ -741,6 +746,158 @@ document.getElementById("inv-tabs")?.addEventListener("click", (e) => {
 
 invClose?.addEventListener("click", hideInventoryPanel);
 
+// ════════════════════════════════════════
+// FEATURES & TRAITS PANEL
+// ════════════════════════════════════════
+
+let currentFeatFilter = "all";
+
+function showFeaturesPanel() {
+  buildFeaturesList();
+  featuresPanel.classList.add("visible");
+  hideOtherPickers("features");
+}
+
+function hideFeaturesPanel() { featuresPanel.classList.remove("visible"); }
+
+function buildFeaturesList() {
+  const char = currentCharData;
+  if (!char) return;
+
+  const features = char.features || [];
+  featList.innerHTML = "";
+
+  // Filter
+  let filtered = features;
+  if (currentFeatFilter !== "all") {
+    filtered = features.filter(f => f.source === currentFeatFilter);
+  }
+
+  if (filtered.length === 0) {
+    featList.innerHTML = '<div style="color:#555;font-size:10px;text-align:center;padding:16px">No features found</div>';
+    return;
+  }
+
+  for (const feat of filtered) {
+    const el = document.createElement("div");
+    const classes = ["feat-item"];
+    if (feat.maxUses !== null) classes.push("has-uses");
+    if (feat.maxUses !== null && feat.remaining === 0) classes.push("depleted");
+    el.className = classes.join(" ");
+
+    // Tags
+    const tags = [];
+    if (feat.activationType) {
+      const tagClass = feat.activationType === "Bonus Action" ? "bonus" : feat.activationType === "Reaction" ? "reaction" : "action";
+      tags.push(`<span class="feat-tag ${tagClass}">${feat.activationType}</span>`);
+    }
+    if (feat.resetType) tags.push(`<span class="feat-tag rest">${feat.resetType}</span>`);
+    if (feat.saveStat) tags.push(`<span class="feat-tag save">${feat.saveStat} Save</span>`);
+    if (feat.dice) tags.push(`<span class="feat-tag dice">${feat.dice}</span>`);
+
+    // Uses pips
+    let usesHTML = "";
+    if (feat.maxUses !== null) {
+      const pips = [];
+      for (let i = 0; i < feat.maxUses; i++) {
+        pips.push(`<span class="feat-use-pip ${i < feat.remaining ? "filled" : "empty"}"></span>`);
+      }
+      // Show pips if <= 10, otherwise show number
+      if (feat.maxUses <= 10) {
+        usesHTML = `<div class="feat-uses">${pips.join("")}</div>`;
+      } else {
+        usesHTML = `<div class="feat-uses" style="font-size:10px;color:#e97045;font-weight:700">${feat.remaining}/${feat.maxUses}</div>`;
+      }
+    }
+
+    // Use button for activatable features
+    let btnHTML = "";
+    if (feat.maxUses !== null && feat.activationType) {
+      btnHTML = `<button class="feat-use-btn" data-feat-key="${feat.key}" ${feat.remaining <= 0 ? "disabled" : ""}>Use</button>`;
+    } else if (!feat.maxUses && feat.activationType) {
+      btnHTML = `<button class="feat-use-btn" data-feat-key="${feat.key}">Use</button>`;
+    }
+
+    el.innerHTML = `
+      <div class="feat-item-top">
+        <span class="feat-item-name">${feat.name}</span>
+        <span class="feat-item-source">${feat.sourceType || feat.source}</span>
+      </div>
+      <div class="feat-item-desc">${feat.description}</div>
+      <div class="feat-item-bottom">
+        <div class="feat-item-tags">${tags.join("")}</div>
+        <div style="display:flex;align-items:center;gap:4px">
+          ${usesHTML}
+          ${btnHTML}
+        </div>
+      </div>
+    `;
+
+    featList.appendChild(el);
+  }
+
+  // Tab highlights
+  document.querySelectorAll(".feat-tab").forEach(tab => {
+    tab.classList.toggle("active", tab.dataset.filter === currentFeatFilter);
+  });
+}
+
+// Tab click handlers
+document.getElementById("feat-tabs")?.addEventListener("click", (e) => {
+  const tab = e.target.closest(".feat-tab");
+  if (!tab) return;
+  currentFeatFilter = tab.dataset.filter;
+  buildFeaturesList();
+});
+
+// Use button clicks — delegate from feat-list
+featList?.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".feat-use-btn");
+  if (!btn || btn.disabled) return;
+
+  const key = btn.dataset.featKey;
+  const char = currentCharData;
+  if (!char || !char.features) return;
+
+  const feat = char.features.find(f => f.key === key);
+  if (!feat) return;
+
+  // Decrement uses if has limited uses
+  if (feat.maxUses !== null) {
+    if (feat.remaining <= 0) {
+      await OBR.notification.show(`${feat.name}: No uses remaining!`, "WARNING");
+      return;
+    }
+    feat.remaining = Math.max(0, feat.remaining - 1);
+    feat.usedCount = (feat.usedCount || 0) + 1;
+
+    // Save updated uses to OBR metadata
+    await OBR.scene.items.updateItems([currentTokenId], (items) => {
+      for (const item of items) {
+        const meta = item.metadata[METADATA_KEY];
+        if (!meta?.character?.features) return;
+        const f = meta.character.features.find(ff => ff.key === key);
+        if (f) {
+          f.remaining = feat.remaining;
+          f.usedCount = feat.usedCount;
+        }
+        meta.lastUpdated = Date.now();
+      }
+    });
+    currentCharData._lastUpdated = Date.now();
+  }
+
+  // Log it
+  const usesStr = feat.maxUses !== null ? ` (${feat.remaining}/${feat.maxUses} remaining)` : "";
+  logCombat(`📜 <strong>${char.name}</strong> uses <strong>${feat.name}</strong>${usesStr}`, "info");
+  await OBR.notification.show(`${char.name} uses ${feat.name}!`, "SUCCESS");
+
+  // Rebuild the list to update pips
+  buildFeaturesList();
+});
+
+featClose?.addEventListener("click", hideFeaturesPanel);
+
 async function onBonusSelected(action) {
   hideBonusPicker();
   logCombat(`⚡ <strong>${currentCharData.name}</strong> uses bonus action: <strong>${action.name}</strong>`, "info");
@@ -774,6 +931,7 @@ function hideOtherPickers(except) {
   if (except !== "bonus") bonusPicker.classList.remove("visible");
   if (except !== "condition") conditionPicker.classList.remove("visible");
   if (except !== "inventory") inventoryPanel.classList.remove("visible");
+  if (except !== "features") featuresPanel.classList.remove("visible");
 }
 
 // ════════════════════════════════════════
@@ -1949,9 +2107,12 @@ function setupListeners() {
     currentCharData = char;
     showHotbar(char);
 
-    // Refresh inventory panel if it's currently open
+    // Refresh open panels
     if (inventoryPanel.classList.contains("visible")) {
       buildInventoryList();
+    }
+    if (featuresPanel.classList.contains("visible")) {
+      buildFeaturesList();
     }
 
     // Refresh condition badges
@@ -2819,6 +2980,13 @@ function showHotbar(char) {
     spellBtn.style.display = hasSpells ? "" : "none";
   }
 
+  // Hide Features button if character has no features
+  const featBtn = document.querySelector('.hotbar-btn.features-btn');
+  if (featBtn) {
+    const hasFeatures = char.features && char.features.length > 0;
+    featBtn.style.display = hasFeatures ? "" : "none";
+  }
+
   // Make HP chip clickable to open editor
   const hpChip = statsBar.querySelector(".stat-chip.hp");
   if (hpChip) {
@@ -2837,7 +3005,7 @@ function showHotbar(char) {
 function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("hidden"); conditionBar.classList.add("hidden"); hpEditor.classList.remove("visible"); acEditor.classList.remove("visible"); tokenNameEl.textContent = ""; currentCharData = null; currentConditions = []; }
 
 function hideInventoryPanel() { inventoryPanel.classList.remove("visible"); }
-function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); currentTokenId = null; }
+function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); hideFeaturesPanel(); currentTokenId = null; }
 
 function showLinkPanel(name) {
   linkStatus.textContent = `"${name}" has no character linked.`;
@@ -2889,6 +3057,12 @@ document.querySelectorAll(".hotbar-btn").forEach((btn) => {
     if (action === "inventory") {
       if (inventoryPanel.classList.contains("visible")) hideInventoryPanel();
       else showInventoryPanel();
+      return;
+    }
+
+    if (action === "features") {
+      if (featuresPanel.classList.contains("visible")) hideFeaturesPanel();
+      else showFeaturesPanel();
       return;
     }
 

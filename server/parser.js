@@ -19,6 +19,7 @@ export function parseCharacter(raw) {
   const bonusActions = parseBonusActions(d, classes, weapons);
   const inventory = parseInventory(d);
   const spells = parseSpells(d, stats, profBonus);
+  const features = parseFeatures(d, stats, profBonus, classes);
 
   // Currency
   const currencies = d.currencies || {};
@@ -49,6 +50,7 @@ export function parseCharacter(raw) {
     inventory,
     currency,
     spells,
+    features,
   };
 }
 
@@ -513,6 +515,170 @@ function parseInventory(d) {
     });
   }
   return items;
+}
+
+// ═══════════════════════════════════════════
+// FEATURES & TRAITS PARSER
+// ═══════════════════════════════════════════
+
+const RESET_TYPE_NAMES = { 1: "Short Rest", 2: "Long Rest", 3: "Day", 4: "Charges" };
+const ACTIVATION_NAMES = { 1: "Action", 3: "Bonus Action", 4: "Reaction", 6: "1 Minute", 7: "1 Hour" };
+
+function parseFeatures(d, stats, profBonus, classes) {
+  const features = [];
+  const seen = new Set();
+
+  // ── 1. Actions (class, race, feat) — these are the activatable features ──
+  const allActions = [
+    ...(d.actions?.class || []),
+    ...(d.actions?.race || []),
+    ...(d.actions?.feat || []),
+  ];
+
+  for (const a of allActions) {
+    if (!a.name || seen.has(a.name)) continue;
+    seen.add(a.name);
+
+    // Calculate effective max uses
+    let maxUses = null;
+    let usedCount = 0;
+    let resetType = null;
+
+    if (a.limitedUse) {
+      maxUses = a.limitedUse.maxUses || 0;
+      usedCount = a.limitedUse.numberUsed || 0;
+
+      // Add ability modifier to max uses if specified
+      if (a.limitedUse.statModifierUsesId) {
+        const statId = a.limitedUse.statModifierUsesId;
+        const statMod = stats[statId - 1]?.modifier || 0;
+        maxUses += Math.max(1, statMod); // minimum 1
+      }
+      // Add proficiency bonus if specified
+      if (a.limitedUse.useProficiencyBonus) {
+        maxUses += profBonus;
+      }
+
+      resetType = RESET_TYPE_NAMES[a.limitedUse.resetType] || null;
+    }
+
+    const activationType = ACTIVATION_NAMES[a.activation?.activationType] || null;
+    const snippet = a.snippet || a.description || "";
+    // Strip HTML tags for clean text
+    const description = snippet.replace(/<[^>]*>/g, "").trim();
+
+    features.push({
+      key: a.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+      name: a.name,
+      source: "action",
+      sourceType: a.componentTypeId ? "class" : "other",
+      activationType,
+      description: description.slice(0, 200),
+      maxUses,
+      usedCount,
+      remaining: maxUses !== null ? Math.max(0, maxUses - usedCount) : null,
+      resetType,
+      // Combat info
+      isAttack: a.displayAsAttack || false,
+      damageType: a.damageTypeId ? null : null, // could map IDs but skip for now
+      saveStat: a.saveStatId ? (["", "STR", "DEX", "CON", "INT", "WIS", "CHA"][a.saveStatId] || null) : null,
+      dice: a.dice?.diceString || null,
+    });
+  }
+
+  // ── 2. Class Features (passive traits, no action required) ──
+  for (const cls of d.classes || []) {
+    const classFeatures = [
+      ...(cls.classFeatures || []),
+      ...(cls.subclassDefinition?.classFeatures || []),
+    ];
+
+    for (const cf of classFeatures) {
+      const def = cf.definition || cf;
+      if (!def.name || seen.has(def.name)) continue;
+
+      // Skip features that are too high level for the character
+      if (def.requiredLevel && def.requiredLevel > (cls.level || 0)) continue;
+
+      seen.add(def.name);
+
+      const snippet = def.snippet || def.description || "";
+      const description = snippet.replace(/<[^>]*>/g, "").trim();
+      if (!description) continue; // Skip empty features
+
+      features.push({
+        key: def.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+        name: def.name,
+        source: "class",
+        sourceType: cls.definition?.name || cls.subclassDefinition?.name || "Class",
+        activationType: null,
+        description: description.slice(0, 200),
+        maxUses: null,
+        usedCount: 0,
+        remaining: null,
+        resetType: null,
+        isAttack: false,
+        saveStat: null,
+        dice: null,
+      });
+    }
+  }
+
+  // ── 3. Racial Traits ──
+  for (const trait of d.race?.racialTraits || []) {
+    const def = trait.definition || trait;
+    if (!def.name || seen.has(def.name)) continue;
+    seen.add(def.name);
+
+    const snippet = def.snippet || def.description || "";
+    const description = snippet.replace(/<[^>]*>/g, "").trim();
+    if (!description) continue;
+
+    features.push({
+      key: def.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+      name: def.name,
+      source: "race",
+      sourceType: d.race?.fullName || "Race",
+      activationType: null,
+      description: description.slice(0, 200),
+      maxUses: null,
+      usedCount: 0,
+      remaining: null,
+      resetType: null,
+      isAttack: false,
+      saveStat: null,
+      dice: null,
+    });
+  }
+
+  // ── 4. Feats ──
+  for (const feat of d.feats || []) {
+    const def = feat.definition || feat;
+    if (!def.name || seen.has(def.name)) continue;
+    seen.add(def.name);
+
+    const snippet = def.snippet || def.description || "";
+    const description = snippet.replace(/<[^>]*>/g, "").trim();
+    if (!description) continue;
+
+    features.push({
+      key: def.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+      name: def.name,
+      source: "feat",
+      sourceType: "Feat",
+      activationType: null,
+      description: description.slice(0, 200),
+      maxUses: null,
+      usedCount: 0,
+      remaining: null,
+      resetType: null,
+      isAttack: false,
+      saveStat: null,
+      dice: null,
+    });
+  }
+
+  return features;
 }
 
 function getProficiencyBonus(classes) {
