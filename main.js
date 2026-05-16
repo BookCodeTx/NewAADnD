@@ -909,15 +909,17 @@ featList?.addEventListener("click", async (e) => {
   await OBR.notification.show(`${char.name} uses ${feat.name}!`, "SUCCESS");
 
   // Start turn-based tracking for duration effects + auto-apply conditions
-  const durationMap = { rage: 10 };
-  const conditionMap = { rage: "raging" }; // auto-apply condition
-  const duration = durationMap[key];
-  if (duration) {
-    await addActiveEffect(currentTokenId, char.name, feat.name, key, duration);
-    logCombat(`🔥 <strong>${char.name}</strong> enters <strong>${feat.name}</strong>! (${duration} turns)`, "spell");
+  // Match by prefix: "rage--enter-" matches "rage", etc.
+  const durationRules = [
+    { match: "rage", duration: 10, condition: "raging" },
+  ];
+  const rule = durationRules.find(r => key.startsWith(r.match));
+  if (rule) {
+    await addActiveEffect(currentTokenId, char.name, feat.name, key, rule.duration);
+    logCombat(`🔥 <strong>${char.name}</strong> enters <strong>${feat.name}</strong>! (${rule.duration} turns)`, "spell");
   }
   // Auto-apply condition (e.g. Rage → Raging status)
-  const autoCondition = conditionMap[key];
+  const autoCondition = rule?.condition;
   if (autoCondition && !currentConditions.includes(autoCondition)) {
     currentConditions.push(autoCondition);
     await OBR.scene.items.updateItems([currentTokenId], (items) => {
@@ -984,8 +986,8 @@ async function tickActiveEffects(activeTokenId) {
         // Effect expired
         logCombat(`⏰ <strong>${effect.charName}</strong>'s <strong>${effect.effectName}</strong> has ended!`, "info");
         // Auto-remove linked condition (e.g. rage → raging)
-        const conditionMap = { rage: "raging" };
-        const linkedCond = conditionMap[effect.key];
+        const condRules = [{ match: "rage", condition: "raging" }];
+        const linkedCond = condRules.find(r => effect.key.startsWith(r.match))?.condition;
         if (linkedCond) {
           try {
             const items = await OBR.scene.items.getItems([effect.tokenId]);
@@ -1734,11 +1736,11 @@ async function renderConditionBadges() {
   // Fetch active effects to show turn counters on linked conditions
   let effects = [];
   try { effects = await getActiveEffects(); } catch {}
-  // Map: condition key → turns remaining (e.g. "raging" → 7/10)
+  // Map: condition key → active effect (e.g. "raging" → rage effect with turns)
   const condToEffect = {};
-  const conditionToEffectKey = { raging: "rage" };
-  for (const [condKey, effectKey] of Object.entries(conditionToEffectKey)) {
-    const eff = effects.find(e => e.tokenId === currentTokenId && e.key === effectKey);
+  const condToPrefix = { raging: "rage" };
+  for (const [condKey, prefix] of Object.entries(condToPrefix)) {
+    const eff = effects.find(e => e.tokenId === currentTokenId && e.key.startsWith(prefix));
     if (eff) condToEffect[condKey] = eff;
   }
 

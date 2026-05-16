@@ -524,6 +524,18 @@ function parseInventory(d) {
 const RESET_TYPE_NAMES = { 1: "Short Rest", 2: "Long Rest", 3: "Day", 4: "Charges" };
 const ACTIVATION_NAMES = { 1: "Action", 3: "Bonus Action", 4: "Reaction", 6: "1 Minute", 7: "1 Hour" };
 
+function cleanDescription(snippet, maxUses = null, profBonus = 0) {
+  return snippet
+    .replace(/<[^>]*>/g, "")
+    .replace(/\{\{limitedUse\}\}/gi, maxUses !== null ? String(maxUses) : "?")
+    .replace(/\{\{proficiency#?unsigned\}\}/gi, String(profBonus))
+    .replace(/\{\{scalevalue\}\}/gi, "")
+    .replace(/\{\{modifier:[\w:]+\}\}/gi, "")
+    .replace(/\{\{[^}]+\}\}/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function parseFeatures(d, stats, profBonus, classes) {
   const features = [];
   const seen = new Set();
@@ -564,8 +576,7 @@ function parseFeatures(d, stats, profBonus, classes) {
 
     const activationType = ACTIVATION_NAMES[a.activation?.activationType] || null;
     const snippet = a.snippet || a.description || "";
-    // Strip HTML tags for clean text
-    const description = snippet.replace(/<[^>]*>/g, "").trim();
+    const description = cleanDescription(snippet, maxUses, profBonus);
 
     features.push({
       key: a.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
@@ -603,7 +614,7 @@ function parseFeatures(d, stats, profBonus, classes) {
       seen.add(def.name);
 
       const snippet = def.snippet || def.description || "";
-      const description = snippet.replace(/<[^>]*>/g, "").trim();
+      const description = cleanDescription(snippet, null, profBonus);
       if (!description) continue; // Skip empty features
 
       features.push({
@@ -631,7 +642,7 @@ function parseFeatures(d, stats, profBonus, classes) {
     seen.add(def.name);
 
     const snippet = def.snippet || def.description || "";
-    const description = snippet.replace(/<[^>]*>/g, "").trim();
+    const description = cleanDescription(snippet, null, profBonus);
     if (!description) continue;
 
     features.push({
@@ -658,7 +669,7 @@ function parseFeatures(d, stats, profBonus, classes) {
     seen.add(def.name);
 
     const snippet = def.snippet || def.description || "";
-    const description = snippet.replace(/<[^>]*>/g, "").trim();
+    const description = cleanDescription(snippet, null, profBonus);
     if (!description) continue;
 
     features.push({
