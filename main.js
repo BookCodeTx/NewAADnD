@@ -2445,16 +2445,20 @@ async function handleSelectionChange() {
   const selection = await OBR.player.getSelection();
 
   if (combatState === COMBAT.AOE_CASTING && selection?.length > 0) {
+    combatState = COMBAT.IDLE; // lock immediately to prevent double-fire
     const items = await OBR.scene.items.getItems(selection);
     const center = items.find((i) => i.layer === "CHARACTER");
-    if (center) await castAoeSpell(center);
+    if (center) { await castAoeSpell(center); }
+    else { combatState = COMBAT.AOE_CASTING; } // restore if no valid target
     return;
   }
 
   if (combatState === COMBAT.TARGETING && selection?.length > 0) {
+    combatState = COMBAT.IDLE; // lock immediately to prevent double-fire on mobile
     const items = await OBR.scene.items.getItems(selection);
     const target = items.find((i) => i.layer === "CHARACTER" && i.id !== attackerTokenId);
-    if (target) await pickTarget(target);
+    if (target) { await pickTarget(target); }
+    else { combatState = COMBAT.TARGETING; } // restore if no valid target
     return;
   }
 
