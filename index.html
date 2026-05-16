@@ -381,6 +381,16 @@
     .feat-rest-btn.short:hover { background: #4499ff33; border-color: #4499ff; }
     .feat-rest-btn.long { border: 1px solid #a855f744; background: #a855f711; color: #a855f7; }
     .feat-rest-btn.long:hover { background: #a855f733; border-color: #a855f7; }
+    .feat-backup-row { display: flex; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #ffffff0a; align-items: center; }
+    .feat-backup-btn { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+    .feat-backup-btn.save { border: 1px solid #45e9a033; background: none; color: #45e9a0; }
+    .feat-backup-btn.save:hover { background: #45e9a022; }
+    .feat-backup-btn.load { border: 1px solid #4499ff33; background: none; color: #4499ff; }
+    .feat-backup-btn.load:hover { background: #4499ff22; }
+    .feat-backup-select { flex: 1; padding: 3px 4px; border: 1px solid #ffffff22; border-radius: 4px; background: #0a0a0a; color: #ddd; font-size: 10px; min-width: 0; }
+    .feat-backup-select:focus { outline: none; border-color: #e97045; }
+    .feat-backup-info { font-size: 9px; color: #6a7a8a; white-space: nowrap; }
+    .feat-backup-info .time { color: #e97045; }
     .feat-close { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #e9704544; border-radius: 4px; background: none; color: #e97045; font-size: 10px; cursor: pointer; }
     .feat-close:hover { background: #e9704522; }
 
@@ -725,6 +735,12 @@
       <div class="feat-rest-row">
         <button class="feat-rest-btn short" id="feat-short-rest">⏱️ Short Rest</button>
         <button class="feat-rest-btn long" id="feat-long-rest">🌙 Long Rest</button>
+      </div>
+      <div class="feat-backup-row">
+        <button class="feat-backup-btn save" id="feat-save-btn">💾 Save</button>
+        <button class="feat-backup-btn load" id="feat-load-btn">📂 Load</button>
+        <select class="feat-backup-select" id="feat-backup-select"></select>
+        <span class="feat-backup-info" id="feat-backup-info"></span>
       </div>
       <button class="feat-close" id="feat-close">Close</button>
     </div>

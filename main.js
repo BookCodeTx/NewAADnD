@@ -984,6 +984,7 @@ let currentFeatFilter = "all";
 
 function showFeaturesPanel() {
   buildFeaturesList();
+  updateFeatBackupUI();
   featuresPanel.classList.add("visible");
   hideOtherPickers("features");
 }
@@ -1148,6 +1149,144 @@ featList?.addEventListener("click", async (e) => {
 
   // Rebuild the list to update pips
   buildFeaturesList();
+});
+
+// ── Features Backup / Restore ──
+const FEAT_BACKUP_PREFIX = "dnd-feat-backup:";
+
+function getAllFeatBackups() {
+  const backups = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key.startsWith(FEAT_BACKUP_PREFIX)) continue;
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      backups.push(data);
+    } catch { /* skip */ }
+  }
+  backups.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+  return backups;
+}
+
+function updateFeatBackupUI() {
+  const select = document.getElementById("feat-backup-select");
+  const info = document.getElementById("feat-backup-info");
+  if (!select) return;
+
+  const backups = getAllFeatBackups();
+  select.innerHTML = "";
+
+  if (backups.length === 0) {
+    select.innerHTML = '<option value="">No saves</option>';
+    if (info) info.textContent = "";
+    return;
+  }
+
+  for (const b of backups) {
+    const date = new Date(b.savedAt);
+    const timeStr = date.toLocaleDateString("th-TH", { day: "numeric", month: "short" }) + " " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    const featCount = b.features?.length || 0;
+    const opt = document.createElement("option");
+    opt.value = b.charName;
+    opt.textContent = `${b.charName} (${featCount} feats, ${timeStr})`;
+    select.appendChild(opt);
+  }
+
+  // Show info for selected
+  updateFeatBackupInfo();
+}
+
+function updateFeatBackupInfo() {
+  const info = document.getElementById("feat-backup-info");
+  const select = document.getElementById("feat-backup-select");
+  if (!info || !select) return;
+  const name = select.value;
+  if (!name) { info.textContent = ""; return; }
+  const key = FEAT_BACKUP_PREFIX + name;
+  const raw = localStorage.getItem(key);
+  if (!raw) { info.textContent = ""; return; }
+  try {
+    const b = JSON.parse(raw);
+    const usable = (b.features || []).filter(f => f.maxUses !== null);
+    const depleted = usable.filter(f => f.remaining < f.maxUses);
+    info.innerHTML = `${depleted.length}/${usable.length} used`;
+  } catch { info.textContent = ""; }
+}
+
+document.getElementById("feat-backup-select")?.addEventListener("change", updateFeatBackupInfo);
+
+document.getElementById("feat-save-btn")?.addEventListener("click", () => {
+  const char = currentCharData;
+  if (!char?.features) return;
+  const key = FEAT_BACKUP_PREFIX + char.name;
+  const backup = {
+    savedAt: Date.now(),
+    charName: char.name,
+    features: JSON.parse(JSON.stringify(char.features)),
+  };
+  localStorage.setItem(key, JSON.stringify(backup));
+  updateFeatBackupUI();
+  logCombat(`💾 <strong>${char.name}</strong> features saved (${char.features.length} feats)`, "info");
+  OBR.notification.show(`Features saved for ${char.name}!`, "SUCCESS");
+});
+
+document.getElementById("feat-load-btn")?.addEventListener("click", async () => {
+  if (!currentCharData || !currentTokenId) return;
+  const select = document.getElementById("feat-backup-select");
+  const selectedName = select?.value;
+  if (!selectedName) {
+    OBR.notification.show("No backup selected", "WARNING");
+    return;
+  }
+
+  const raw = localStorage.getItem(FEAT_BACKUP_PREFIX + selectedName);
+  if (!raw) {
+    OBR.notification.show("Backup not found", "WARNING");
+    return;
+  }
+
+  try {
+    const backup = JSON.parse(raw);
+    const backupFeats = backup.features || [];
+
+    // Apply saved usage data to current features (match by key)
+    const charFeats = currentCharData.features || [];
+    let restored = 0;
+    for (const feat of charFeats) {
+      const saved = backupFeats.find(f => f.key === feat.key);
+      if (saved && feat.maxUses !== null && saved.maxUses !== null) {
+        feat.remaining = saved.remaining;
+        feat.usedCount = saved.usedCount;
+        restored++;
+      }
+    }
+
+    // Add features that exist in backup but not current (custom/missing)
+    const currentKeys = new Set(charFeats.map(f => f.key));
+    const extras = backupFeats.filter(f => !currentKeys.has(f.key));
+    if (extras.length > 0) {
+      currentCharData.features = [...charFeats, ...extras];
+    }
+
+    // Save to OBR
+    await OBR.scene.items.updateItems([currentTokenId], (items) => {
+      for (const item of items) {
+        const meta = item.metadata[METADATA_KEY];
+        if (!meta?.character) return;
+        meta.character.features = currentCharData.features;
+        meta.lastUpdated = Date.now();
+      }
+    });
+    currentCharData._lastUpdated = Date.now();
+
+    buildFeaturesList();
+    const fromLabel = selectedName === currentCharData.name ? "" : ` from <strong>${selectedName}</strong>`;
+    logCombat(`📂 <strong>${currentCharData.name}</strong> loaded features${fromLabel} — ${restored} feat(s) restored`, "info");
+    OBR.notification.show(`Features loaded! ${restored} feat(s) restored`, "SUCCESS");
+  } catch (err) {
+    console.error("Failed to load feat backup:", err);
+    OBR.notification.show("Failed to load backup", "ERROR");
+  }
 });
 
 // ── Rest handlers ──
