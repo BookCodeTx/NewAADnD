@@ -262,9 +262,13 @@
     .cond-card:hover { border-color: #ff66aa; background: #1a1028; }
     .cond-card.active-cond { border-color: #45e9a0; background: #0a2018; }
     .cond-card .cond-icon { font-size: 14px; }
-    .cond-card .cond-info { flex: 1; }
+    .cond-card .cond-info { flex: 1; min-width: 0; }
     .cond-card .cond-name { font-size: 10px; font-weight: 700; color: #d0a0c0; }
     .cond-card .cond-desc { font-size: 7px; color: #776688; }
+    .cond-card .cond-turns-input { width: 32px; padding: 2px 3px; border: 1px solid #ff66aa44; border-radius: 3px; background: #0a0a14; color: #ff66aa; font-size: 10px; text-align: center; flex-shrink: 0; }
+    .cond-card .cond-turns-input:focus { outline: none; border-color: #ff66aa; }
+    .cond-card .cond-turns-label { font-size: 7px; color: #776688; flex-shrink: 0; }
+    .cond-card .cond-active-info { font-size: 8px; color: #45e9a0; font-weight: 600; flex-shrink: 0; }
     .cond-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #ff66aa44; border-radius: 4px; background: none; color: #ff66aa; font-size: 10px; cursor: pointer; }
     .cond-cancel:hover { background: #ff66aa22; }
 

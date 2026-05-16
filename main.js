@@ -1410,20 +1410,30 @@ async function tickActiveEffects(activeTokenId) {
       if (effect.turnsRemaining <= 0) {
         // Effect expired
         logCombat(`⏰ <strong>${effect.charName}</strong>'s <strong>${effect.effectName}</strong> has ended!`, "info");
-        // Auto-remove linked condition (e.g. rage → raging)
-        const condRules = [{ match: "rage", condition: "raging" }];
-        const linkedCond = condRules.find(r => effect.key.startsWith(r.match))?.condition;
-        if (linkedCond) {
+
+        // Determine which condition to remove
+        let condToRemove = null;
+
+        // Direct condition effect (cond:poisoned → remove "poisoned")
+        if (effect.key.startsWith("cond:")) {
+          condToRemove = effect.key.slice(5);
+        } else {
+          // Legacy: feature-linked conditions (e.g. rage → raging)
+          const condRules = [{ match: "rage", condition: "raging" }];
+          condToRemove = condRules.find(r => effect.key.startsWith(r.match))?.condition || null;
+        }
+
+        if (condToRemove) {
           try {
             const items = await OBR.scene.items.getItems([effect.tokenId]);
             const token = items[0];
             if (token) {
-              const conds = (token.metadata?.[COND_METADATA_KEY] || []).filter(c => c !== linkedCond);
+              const conds = (token.metadata?.[COND_METADATA_KEY] || []).filter(c => c !== condToRemove);
               await OBR.scene.items.updateItems([effect.tokenId], (upd) => {
                 for (const item of upd) item.metadata[COND_METADATA_KEY] = conds;
               });
-              const condDef = CONDITIONS[linkedCond];
-              logCombat(`${condDef?.icon || "📌"} <strong>${condDef?.name || linkedCond}</strong> removed from <strong>${effect.charName}</strong>`, "condition");
+              const condDef = CONDITIONS[condToRemove];
+              logCombat(`${condDef?.icon || "📌"} <strong>${condDef?.name || condToRemove}</strong> removed from <strong>${effect.charName}</strong>`, "condition");
               // Update local if it's our token
               if (effect.tokenId === currentTokenId) { currentConditions = conds; renderConditionBadges(); }
             }
@@ -2100,21 +2110,50 @@ document.getElementById("ac-btn-close").addEventListener("click", () => {
 // CONDITION SYSTEM
 // ════════════════════════════════════════
 
-function buildCondGrid() {
+async function buildCondGrid() {
   condGrid.innerHTML = "";
+  // Fetch active effects to show current turn info
+  let effects = [];
+  try { effects = await getActiveEffects(); } catch {}
+
   for (const [key, cond] of Object.entries(CONDITIONS)) {
     const card = document.createElement("div");
     card.className = "cond-card";
     card.dataset.condKey = key;
-    if (currentConditions.includes(key)) card.classList.add("active-cond");
+    const isActive = currentConditions.includes(key);
+    if (isActive) card.classList.add("active-cond");
+
+    // Check if this condition has an active effect with turns
+    const eff = effects.find(e => e.tokenId === currentTokenId && e.key === `cond:${key}`);
+
+    let rightHTML = "";
+    if (isActive && eff) {
+      rightHTML = `<span class="cond-active-info">${eff.turnsRemaining}/${eff.totalTurns}T</span>`;
+    } else if (!isActive) {
+      rightHTML = `
+        <input type="number" class="cond-turns-input" data-cond-key="${key}" min="0" placeholder="∞" title="Turns (0 = permanent)" />
+        <span class="cond-turns-label">turns</span>
+      `;
+    }
+
     card.innerHTML = `
       <span class="cond-icon">${cond.icon}</span>
       <div class="cond-info">
         <div class="cond-name">${cond.name}</div>
         <div class="cond-desc">${cond.effect}</div>
       </div>
+      ${rightHTML}
     `;
-    card.addEventListener("click", () => toggleCondition(key));
+
+    // Prevent click when typing in input
+    const input = card.querySelector(".cond-turns-input");
+    if (input) input.addEventListener("click", (e) => e.stopPropagation());
+
+    card.addEventListener("click", () => {
+      const turnsInput = card.querySelector(".cond-turns-input");
+      const turns = turnsInput ? parseInt(turnsInput.value) || 0 : 0;
+      toggleCondition(key, turns);
+    });
     condGrid.appendChild(card);
   }
 }
@@ -2131,11 +2170,24 @@ function hideConditionPicker() {
 
 condCancel.addEventListener("click", hideConditionPicker);
 
-async function toggleCondition(key) {
+async function toggleCondition(key, turns = 0) {
   if (!currentTokenId) return;
   const idx = currentConditions.indexOf(key);
-  if (idx >= 0) currentConditions.splice(idx, 1);
-  else currentConditions.push(key);
+  const removing = idx >= 0;
+
+  if (removing) {
+    currentConditions.splice(idx, 1);
+    // Remove active effect for this condition
+    await removeActiveEffect(currentTokenId, `cond:${key}`);
+  } else {
+    currentConditions.push(key);
+    // Add active effect with turn tracking if turns > 0
+    if (turns > 0) {
+      const charName = currentCharData?.name || "Token";
+      const condName = CONDITIONS[key]?.name || key;
+      await addActiveEffect(currentTokenId, charName, condName, `cond:${key}`, turns);
+    }
+  }
 
   await OBR.scene.items.updateItems([currentTokenId], (items) => {
     for (const item of items) {
@@ -2144,8 +2196,9 @@ async function toggleCondition(key) {
   });
 
   const cond = CONDITIONS[key];
-  const action = idx >= 0 ? "removed" : "applied";
-  logCombat(`${cond.icon} <strong>${cond.name}</strong> ${action} to <strong>${currentCharData?.name || "token"}</strong>`, "condition");
+  const action = removing ? "removed" : "applied";
+  const turnStr = (!removing && turns > 0) ? ` (${turns} turns)` : "";
+  logCombat(`${cond.icon} <strong>${cond.name}</strong> ${action} to <strong>${currentCharData?.name || "token"}</strong>${turnStr}`, "condition");
 
   buildCondGrid();
   renderConditionBadges();
@@ -2158,15 +2211,22 @@ async function renderConditionBadges() {
   }
   conditionBar.classList.remove("hidden");
 
-  // Fetch active effects to show turn counters on linked conditions
+  // Fetch active effects to show turn counters
   let effects = [];
   try { effects = await getActiveEffects(); } catch {}
-  // Map: condition key → active effect (e.g. "raging" → rage effect with turns)
+
+  // Map: condition key → active effect
   const condToEffect = {};
+  // Legacy: "raging" condition linked to "rage" feature effect
   const condToPrefix = { raging: "rage" };
   for (const [condKey, prefix] of Object.entries(condToPrefix)) {
     const eff = effects.find(e => e.tokenId === currentTokenId && e.key.startsWith(prefix));
     if (eff) condToEffect[condKey] = eff;
+  }
+  // Direct condition effects (cond:key)
+  for (const key of currentConditions) {
+    const eff = effects.find(e => e.tokenId === currentTokenId && e.key === `cond:${key}`);
+    if (eff) condToEffect[key] = eff;
   }
 
   conditionBar.innerHTML = currentConditions.map((key) => {
