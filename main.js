@@ -2815,7 +2815,7 @@ function showHotbar(char) {
   // Hide Spell button if character has no spells
   const spellBtn = document.querySelector('.hotbar-btn.spell');
   if (spellBtn) {
-    const hasSpells = (char.spells && char.spells.length > 0) || !char.spells;
+    const hasSpells = char.spells && char.spells.length > 0;
     spellBtn.style.display = hasSpells ? "" : "none";
   }
 
