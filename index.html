@@ -341,7 +341,8 @@
     .inv-close:hover { background: #e9c64522; }
 
     /* ═══ FEATURES & TRAITS ═══ */
-    #features-panel { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1408, #18100a); border: 2px solid #e97045; border-radius: 10px; margin-top: 6px; max-height: 450px; overflow: hidden; }
+    #features-panel { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1408, #18100a); border: 2px solid #e97045; border-radius: 10px; margin-top: 6px; max-height: 480px; overflow-y: auto; }
+    #features-panel::-webkit-scrollbar { width: 4px; } #features-panel::-webkit-scrollbar-thumb { background: #e9704544; border-radius: 2px; }
     #features-panel.visible { display: block; animation: dice-pop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
     .feat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
     .feat-title { color: #e97045; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; }
@@ -374,6 +375,12 @@
     .feat-use-btn { padding: 2px 8px; border-radius: 4px; border: 1px solid #e97045; background: #e9704522; color: #e97045; font-size: 9px; font-weight: 700; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
     .feat-use-btn:hover { background: #e97045; color: #fff; }
     .feat-use-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .feat-rest-row { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #ffffff0a; }
+    .feat-rest-btn { flex: 1; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+    .feat-rest-btn.short { border: 1px solid #4499ff44; background: #4499ff11; color: #4499ff; }
+    .feat-rest-btn.short:hover { background: #4499ff33; border-color: #4499ff; }
+    .feat-rest-btn.long { border: 1px solid #a855f744; background: #a855f711; color: #a855f7; }
+    .feat-rest-btn.long:hover { background: #a855f733; border-color: #a855f7; }
     .feat-close { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #e9704544; border-radius: 4px; background: none; color: #e97045; font-size: 10px; cursor: pointer; }
     .feat-close:hover { background: #e9704522; }
 
@@ -715,6 +722,10 @@
         <button class="feat-tab" data-filter="feat">Feats</button>
       </div>
       <div class="feat-list" id="feat-list"></div>
+      <div class="feat-rest-row">
+        <button class="feat-rest-btn short" id="feat-short-rest">⏱️ Short Rest</button>
+        <button class="feat-rest-btn long" id="feat-long-rest">🌙 Long Rest</button>
+      </div>
       <button class="feat-close" id="feat-close">Close</button>
     </div>
 

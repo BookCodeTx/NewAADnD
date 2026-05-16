@@ -1150,6 +1150,78 @@ featList?.addEventListener("click", async (e) => {
   buildFeaturesList();
 });
 
+// ── Rest handlers ──
+async function performRest(restType) {
+  const char = currentCharData;
+  if (!char?.features || !currentTokenId) return;
+
+  const isLong = restType === "long";
+  const label = isLong ? "Long Rest" : "Short Rest";
+  const matchTypes = isLong
+    ? ["Short Rest", "Long Rest", "Day"]  // Long rest resets everything
+    : ["Short Rest"];                       // Short rest only resets short rest features
+
+  let resetCount = 0;
+  for (const feat of char.features) {
+    if (feat.maxUses === null || feat.remaining === feat.maxUses) continue;
+    if (!feat.resetType || !matchTypes.includes(feat.resetType)) continue;
+    feat.remaining = feat.maxUses;
+    feat.usedCount = 0;
+    resetCount++;
+  }
+
+  if (resetCount === 0) {
+    OBR.notification.show(`${char.name}: Nothing to reset on ${label}`, "INFO");
+    return;
+  }
+
+  // Save to OBR
+  await OBR.scene.items.updateItems([currentTokenId], (items) => {
+    for (const item of items) {
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta?.character?.features) return;
+      for (const feat of meta.character.features) {
+        if (feat.maxUses === null) continue;
+        if (!feat.resetType || !matchTypes.includes(feat.resetType)) continue;
+        feat.remaining = feat.maxUses;
+        feat.usedCount = 0;
+      }
+      meta.lastUpdated = Date.now();
+    }
+  });
+  currentCharData._lastUpdated = Date.now();
+
+  // Remove active effects for this token (e.g. Rage ends on rest)
+  const effects = await getActiveEffects();
+  const remaining = effects.filter(e => e.tokenId !== currentTokenId);
+  if (remaining.length !== effects.length) {
+    await setActiveEffects(remaining);
+  }
+
+  // Remove combat conditions on long rest
+  if (isLong) {
+    const keepConditions = ["concentrating"]; // keep concentration if any
+    const cleared = currentConditions.filter(c => keepConditions.includes(c));
+    if (cleared.length !== currentConditions.length) {
+      currentConditions = cleared;
+      await OBR.scene.items.updateItems([currentTokenId], (items) => {
+        for (const item of items) {
+          item.metadata[COND_METADATA_KEY] = [...currentConditions];
+        }
+      });
+      renderConditionBadges();
+    }
+  }
+
+  buildFeaturesList();
+  const icon = isLong ? "🌙" : "⏱️";
+  logCombat(`${icon} <strong>${char.name}</strong> takes a <strong>${label}</strong> — ${resetCount} feature(s) restored!`, "info");
+  OBR.notification.show(`${char.name}: ${label} — ${resetCount} feature(s) restored!`, "SUCCESS");
+}
+
+document.getElementById("feat-short-rest")?.addEventListener("click", () => performRest("short"));
+document.getElementById("feat-long-rest")?.addEventListener("click", () => performRest("long"));
+
 featClose?.addEventListener("click", hideFeaturesPanel);
 
 // ════════════════════════════════════════
