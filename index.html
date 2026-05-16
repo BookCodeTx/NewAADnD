@@ -55,6 +55,9 @@
     #init-add-value:focus { outline: none; border-color: #e9a045; }
     #init-add-btn { padding: 3px 12px; border: none; border-radius: 4px; background: #45e9a0; color: #0d0d1a; font-size: 10px; font-weight: 700; cursor: pointer; }
     #init-add-btn:hover { background: #35d990; }
+    #init-roll-d20 { padding: 2px 8px; border: 1px solid #e9a045; border-radius: 4px; background: #e9a04522; color: #e9a045; font-size: 14px; cursor: pointer; transition: all 0.15s; }
+    #init-roll-d20:hover { background: #e9a045; color: #0d0d1a; }
+    #init-roll-d20.hidden { display: none; }
     #init-add-btn.hidden, #init-add-value.hidden, #init-input-confirm.hidden { display: none; }
     .init-added-row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; background: #16213e; border-radius: 4px; }
     .init-added-row .init-added-val { width: 28px; text-align: center; font-size: 13px; font-weight: 800; color: #e9a045; }
@@ -523,6 +526,7 @@
       <div class="init-input-list" id="init-input-list"></div>
       <div class="init-add-row">
         <span class="init-add-label" id="init-add-label">Select a token on the board...</span>
+        <button id="init-roll-d20" class="hidden" title="Roll 1d20 + DEX">🎲</button>
         <input type="number" id="init-add-value" placeholder="Init" class="hidden" />
         <button id="init-add-btn" class="hidden">Add</button>
       </div>

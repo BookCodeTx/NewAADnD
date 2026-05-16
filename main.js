@@ -1997,12 +1997,34 @@ function onInitTokenSelected(item) {
   initAddLabel.textContent = initPendingToken.name;
   initAddValue.classList.remove("hidden");
   initAddBtn.classList.remove("hidden");
+  document.getElementById("init-roll-d20").classList.remove("hidden");
   initAddValue.value = "";
   initAddValue.focus();
 }
 
 initAddBtn.addEventListener("click", addInitToken);
 initAddValue.addEventListener("keydown", (e) => { if (e.key === "Enter") addInitToken(); });
+
+// Roll d20 + DEX for initiative
+document.getElementById("init-roll-d20").addEventListener("click", () => {
+  if (!initPendingToken) return;
+  // Get DEX modifier from the token's character data
+  const tokenId = initPendingToken.tokenId;
+  OBR.scene.items.getItems([tokenId]).then(items => {
+    const token = items[0];
+    const char = token?.metadata?.[METADATA_KEY]?.character;
+    const dexMod = char?.stats?.find(s => s.name === "DEX")?.modifier || 0;
+    const roll = Math.floor(Math.random() * 20) + 1;
+    const total = roll + dexMod;
+    initAddValue.value = total;
+    const modStr = dexMod >= 0 ? `+${dexMod}` : `${dexMod}`;
+    logCombat(`🎲 <strong>${initPendingToken.name}</strong> rolls initiative: <strong>${roll}</strong> ${modStr} = <strong>${total}</strong>`);
+    // Flash the input
+    initAddValue.style.borderColor = "#e9a045";
+    initAddValue.style.background = "#e9a04533";
+    setTimeout(() => { initAddValue.style.borderColor = ""; initAddValue.style.background = ""; }, 600);
+  });
+});
 
 function addInitToken() {
   if (!initPendingToken) return;
@@ -2018,6 +2040,7 @@ function addInitToken() {
   initAddLabel.textContent = "Select next token...";
   initAddValue.classList.add("hidden");
   initAddBtn.classList.add("hidden");
+  document.getElementById("init-roll-d20").classList.add("hidden");
   initConfirmBtn.classList.remove("hidden");
 }
 
