@@ -66,6 +66,13 @@ const conditionPicker = document.getElementById("condition-picker");
 const condGrid = document.getElementById("cond-grid");
 const condCancel = document.getElementById("cond-cancel");
 
+// Inventory panel
+const inventoryPanel = document.getElementById("inventory-panel");
+const invList = document.getElementById("inv-list");
+const invCurrency = document.getElementById("inv-currency");
+const invFooter = document.getElementById("inv-footer");
+const invClose = document.getElementById("inv-close");
+
 // AoE results
 const aoeResults = document.getElementById("aoe-results");
 const aoeTitle = document.getElementById("aoe-title");
@@ -515,6 +522,119 @@ function showBonusPicker() {
 
 function hideBonusPicker() { bonusPicker.classList.remove("visible"); }
 
+// ════════════════════════════════════════
+// INVENTORY PANEL
+// ════════════════════════════════════════
+
+const ITEM_ICONS = {
+  Weapon: "⚔️", Armor: "🛡️", Potion: "🧪", Scroll: "📜",
+  Wondrous: "✨", Ring: "💍", Rod: "🔮", Staff: "🪄",
+  Wand: "🪄", Ammunition: "🏹", Gear: "⚙️", Tool: "🔧",
+  Pack: "🎒", Other: "📦",
+};
+
+function getItemIcon(item) {
+  if (item.type === "Weapon") return "⚔️";
+  if (item.type === "Armor") return "🛡️";
+  if (item.subType?.includes("Potion")) return "🧪";
+  if (item.subType?.includes("Scroll")) return "📜";
+  if (item.isMagic) return "✨";
+  const key = Object.keys(ITEM_ICONS).find(k => item.type?.includes(k) || item.subType?.includes(k));
+  return ITEM_ICONS[key] || "📦";
+}
+
+let currentInvFilter = "all";
+
+function showInventoryPanel() {
+  buildInventoryList();
+  inventoryPanel.classList.add("visible");
+  hideOtherPickers("inventory");
+}
+
+function buildInventoryList() {
+  const char = currentCharData;
+  if (!char) return;
+
+  const items = char.inventory || [];
+  const currency = char.currency || {};
+
+  // Currency display
+  const coins = [];
+  if (currency.pp) coins.push(`<span class="pp">${currency.pp} pp</span>`);
+  if (currency.gp) coins.push(`<span class="gp">${currency.gp} gp</span>`);
+  if (currency.ep) coins.push(`<span class="ep">${currency.ep} ep</span>`);
+  if (currency.sp) coins.push(`<span class="sp">${currency.sp} sp</span>`);
+  if (currency.cp) coins.push(`<span class="cp">${currency.cp} cp</span>`);
+  invCurrency.innerHTML = coins.join("") || '<span style="color:#555">No coins</span>';
+
+  // Filter items
+  let filtered = items;
+  if (currentInvFilter === "equipped") {
+    filtered = items.filter(i => i.equipped);
+  } else if (currentInvFilter === "gear") {
+    filtered = items.filter(i => i.type !== "Weapon" && i.type !== "Armor");
+  } else if (currentInvFilter !== "all") {
+    filtered = items.filter(i => i.type === currentInvFilter);
+  }
+
+  // Sort: equipped first, then magic, then alphabetical
+  filtered.sort((a, b) => {
+    if (a.equipped !== b.equipped) return a.equipped ? -1 : 1;
+    if (a.isMagic !== b.isMagic) return a.isMagic ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  invList.innerHTML = "";
+
+  if (filtered.length === 0) {
+    invList.innerHTML = '<div style="color:#555;font-size:10px;text-align:center;padding:16px">No items found</div>';
+  }
+
+  for (const item of filtered) {
+    const el = document.createElement("div");
+    const classes = ["inv-item"];
+    if (item.equipped) classes.push("equipped");
+    if (item.isMagic) classes.push("magic");
+    el.className = classes.join(" ");
+
+    const icon = getItemIcon(item);
+    const detail = item.notes || item.type || "";
+    const qtyStr = item.quantity > 1 ? `<span class="inv-item-qty">x${item.quantity}</span>` : "";
+    const weightStr = item.weight ? `<span class="inv-item-weight">${item.weight * (item.quantity || 1)} lb</span>` : "";
+    const equippedTag = item.equipped ? '<span class="inv-item-equipped-tag">E</span>' : "";
+
+    el.innerHTML = `
+      <span class="inv-item-icon">${icon}</span>
+      <div class="inv-item-info">
+        <div class="inv-item-name">${item.name}${item.isMagic ? " ✦" : ""}</div>
+        <div class="inv-item-detail">${detail}</div>
+      </div>
+      ${qtyStr}${weightStr}${equippedTag}
+    `;
+
+    invList.appendChild(el);
+  }
+
+  // Footer: total weight
+  const totalWeight = items.reduce((sum, i) => sum + (i.weight || 0) * (i.quantity || 1), 0);
+  invFooter.textContent = `${items.length} items — ${totalWeight.toFixed(1)} lb total`;
+
+  // Tab highlight
+  document.querySelectorAll(".inv-tab").forEach(tab => {
+    tab.classList.toggle("active", tab.dataset.filter === currentInvFilter);
+  });
+}
+
+// Tab click handlers
+document.getElementById("inv-tabs")?.addEventListener("click", (e) => {
+  const tab = e.target.closest(".inv-tab");
+  if (!tab) return;
+  currentInvFilter = tab.dataset.filter;
+  buildInventoryList();
+});
+
+invClose?.addEventListener("click", hideInventoryPanel);
+
 async function onBonusSelected(action) {
   hideBonusPicker();
   logCombat(`⚡ <strong>${currentCharData.name}</strong> uses bonus action: <strong>${action.name}</strong>`, "info");
@@ -547,6 +667,7 @@ function hideOtherPickers(except) {
   if (except !== "save") savePicker.classList.remove("visible");
   if (except !== "bonus") bonusPicker.classList.remove("visible");
   if (except !== "condition") conditionPicker.classList.remove("visible");
+  if (except !== "inventory") inventoryPanel.classList.remove("visible");
 }
 
 // ════════════════════════════════════════
@@ -2568,7 +2689,8 @@ function showHotbar(char) {
 
 function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("hidden"); conditionBar.classList.add("hidden"); hpEditor.classList.remove("visible"); acEditor.classList.remove("visible"); tokenNameEl.textContent = ""; currentCharData = null; currentConditions = []; }
 
-function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); currentTokenId = null; }
+function hideInventoryPanel() { inventoryPanel.classList.remove("visible"); }
+function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); currentTokenId = null; }
 
 function showLinkPanel(name) {
   linkStatus.textContent = `"${name}" has no character linked.`;
@@ -2614,6 +2736,12 @@ document.querySelectorAll(".hotbar-btn").forEach((btn) => {
     if (action === "bonus") {
       if (bonusPicker.classList.contains("visible")) hideBonusPicker();
       else showBonusPicker();
+      return;
+    }
+
+    if (action === "inventory") {
+      if (inventoryPanel.classList.contains("visible")) hideInventoryPanel();
+      else showInventoryPanel();
       return;
     }
 

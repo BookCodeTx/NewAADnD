@@ -252,6 +252,40 @@
     .cond-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #ff66aa44; border-radius: 4px; background: none; color: #ff66aa; font-size: 10px; cursor: pointer; }
     .cond-cancel:hover { background: #ff66aa22; }
 
+    /* ═══ INVENTORY PANEL ═══ */
+    #inventory-panel { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1810, #141008); border: 2px solid #e9c645; border-radius: 10px; margin-top: 6px; max-height: 420px; overflow: hidden; }
+    #inventory-panel.visible { display: block; animation: dice-pop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+    .inv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .inv-title { font-size: 13px; font-weight: 700; color: #e9c645; text-shadow: 0 0 8px rgba(233,198,69,0.3); }
+    .inv-currency { font-size: 10px; color: #c0b080; display: flex; gap: 6px; }
+    .inv-currency span { padding: 1px 5px; border-radius: 3px; background: #ffffff08; }
+    .inv-currency .gp { color: #ffd700; font-weight: 600; }
+    .inv-currency .sp { color: #c0c0c0; }
+    .inv-currency .cp { color: #cd7f32; }
+    .inv-currency .pp { color: #e5e4e2; }
+    .inv-currency .ep { color: #a0a0c0; }
+    .inv-tabs { display: flex; gap: 3px; margin-bottom: 6px; flex-wrap: wrap; }
+    .inv-tab { padding: 3px 8px; border-radius: 4px; border: 1px solid #e9c64533; background: none; color: #8899aa; font-size: 9px; cursor: pointer; transition: all 0.15s; }
+    .inv-tab:hover { background: #e9c64515; color: #e9c645; }
+    .inv-tab.active { background: #e9c64522; color: #e9c645; border-color: #e9c645; font-weight: 600; }
+    .inv-list { max-height: 310px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+    .inv-list::-webkit-scrollbar { width: 4px; } .inv-list::-webkit-scrollbar-thumb { background: #e9c64544; border-radius: 2px; }
+    .inv-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #ffffff06; border-radius: 6px; border: 1px solid transparent; transition: all 0.15s; cursor: default; }
+    .inv-item:hover { background: #e9c64510; border-color: #e9c64533; }
+    .inv-item.equipped { border-left: 3px solid #45e9a0; }
+    .inv-item.magic { border-left: 3px solid #a045e9; }
+    .inv-item-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
+    .inv-item-info { flex: 1; min-width: 0; }
+    .inv-item-name { font-size: 11px; font-weight: 600; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .inv-item.magic .inv-item-name { color: #c8a0f0; }
+    .inv-item-detail { font-size: 9px; color: #6a7a8a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .inv-item-qty { font-size: 10px; color: #8899aa; background: #ffffff0a; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+    .inv-item-weight { font-size: 9px; color: #6a7a8a; flex-shrink: 0; min-width: 32px; text-align: right; }
+    .inv-item-equipped-tag { font-size: 8px; color: #45e9a0; background: #45e9a015; padding: 1px 4px; border-radius: 3px; flex-shrink: 0; }
+    .inv-footer { margin-top: 4px; font-size: 9px; color: #6a7a8a; text-align: right; padding-top: 4px; border-top: 1px solid #ffffff0a; }
+    .inv-close { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #e9c64544; border-radius: 4px; background: none; color: #e9c645; font-size: 10px; cursor: pointer; }
+    .inv-close:hover { background: #e9c64522; }
+
     /* ═══ AoE RESULTS ═══ */
     #aoe-results { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1028, #16102e); border: 2px solid #e94560; border-radius: 10px; margin-top: 6px; max-height: 200px; overflow-y: auto; }
     #aoe-results.visible { display: block; }
@@ -468,6 +502,7 @@
       <button class="hotbar-btn spell" data-action="spell"><span class="icon">🔮</span><span class="label">Spell</span></button>
       <button class="hotbar-btn bonus" data-action="bonus" style="border-bottom: 3px solid #45e9a0;"><span class="icon">⚡</span><span class="label">Bonus</span></button>
       <button class="hotbar-btn conditions-btn" data-action="conditions"><span class="icon">🏷️</span><span class="label">Status</span></button>
+      <button class="hotbar-btn inventory-btn" data-action="inventory" style="border-bottom: 3px solid #e9c645;"><span class="icon">🎒</span><span class="label">Bag</span></button>
       <button class="hotbar-btn rest" data-action="rest"><span class="icon">💤</span><span class="label">Rest</span></button>
       <button class="hotbar-btn refresh" id="refresh-btn"><span class="icon">🔄</span><span class="label">Sync</span></button>
     </div>
@@ -544,6 +579,24 @@
       <div class="cond-picker-title">Toggle Condition</div>
       <div class="cond-grid" id="cond-grid"></div>
       <button class="cond-cancel" id="cond-cancel">Close</button>
+    </div>
+
+    <!-- Inventory Panel -->
+    <div id="inventory-panel">
+      <div class="inv-header">
+        <div class="inv-title">🎒 Inventory</div>
+        <div class="inv-currency" id="inv-currency"></div>
+      </div>
+      <div class="inv-tabs" id="inv-tabs">
+        <button class="inv-tab active" data-filter="all">All</button>
+        <button class="inv-tab" data-filter="equipped">Equipped</button>
+        <button class="inv-tab" data-filter="Weapon">Weapons</button>
+        <button class="inv-tab" data-filter="Armor">Armor</button>
+        <button class="inv-tab" data-filter="gear">Gear</button>
+      </div>
+      <div class="inv-list" id="inv-list"></div>
+      <div class="inv-footer" id="inv-footer"></div>
+      <button class="inv-close" id="inv-close">Close</button>
     </div>
 
     <!-- AoE Results -->

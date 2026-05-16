@@ -17,6 +17,17 @@ export function parseCharacter(raw) {
   const weapons = parseWeapons(d, stats, profBonus);
   const skills = parseSkills(d, stats, profBonus);
   const bonusActions = parseBonusActions(d, classes, weapons);
+  const inventory = parseInventory(d);
+
+  // Currency
+  const currencies = d.currencies || {};
+  const currency = {
+    cp: currencies.cp || 0,
+    sp: currencies.sp || 0,
+    ep: currencies.ep || 0,
+    gp: currencies.gp || 0,
+    pp: currencies.pp || 0,
+  };
 
   return {
     id: d.id,
@@ -34,6 +45,8 @@ export function parseCharacter(raw) {
     skills,
     savingThrows: parseSavingThrows(d, stats, profBonus),
     bonusActions,
+    inventory,
+    currency,
   };
 }
 
@@ -457,6 +470,47 @@ function parseWeapons(d, stats, profBonus) {
   });
 
   return weapons;
+}
+
+function parseInventory(d) {
+  const items = [];
+  for (const item of d.inventory || []) {
+    const def = item.definition;
+    if (!def) continue;
+
+    const filterType = def.filterType || def.type || "Other";
+    const subType = def.subType || def.type || "";
+    const notes = [];
+
+    // Build notes from properties
+    if (def.armorClass) notes.push(`AC ${def.armorClass}`);
+    if (def.damage?.diceString) notes.push(`${def.damage.diceString} ${def.damageType || ""}`);
+    if (def.range && def.range > 5) notes.push(`Range ${def.range}${def.longRange ? `/${def.longRange}` : ""}`);
+    if (def.properties) {
+      for (const p of def.properties) {
+        if (p.name) notes.push(p.name);
+      }
+    }
+    if (def.stealthCheck === 1) notes.push("Stealth ⊘");
+
+    items.push({
+      name: def.name,
+      type: filterType,
+      subType,
+      equipped: item.equipped || false,
+      quantity: item.quantity || 1,
+      weight: def.weight || 0,
+      cost: def.cost?.quantity || 0,
+      costUnit: def.cost?.unit || "gp",
+      rarity: def.rarity || "Common",
+      description: def.description || def.snippet || "",
+      notes: notes.join(", "),
+      isAttuned: item.isAttuned || false,
+      isMagic: def.magic || false,
+      canEquip: def.canEquip || false,
+    });
+  }
+  return items;
 }
 
 function getProficiencyBonus(classes) {
