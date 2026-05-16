@@ -195,23 +195,115 @@ function resetCombat() {
 // SPELL PICKER
 // ════════════════════════════════════════
 
+let currentSpellFilter = "all"; // "all", "cantrip", "1", "2", etc.
+
 function buildSpellGrid() {
   spellGrid.innerHTML = "";
-  for (const [key, spell] of Object.entries(SPELLS)) {
-    const card = document.createElement("div");
-    card.className = "spell-card";
-    card.dataset.spellKey = key;
-    const tags = [];
-    if (spell.isAoE) tags.push(`<span class="spell-tag aoe">AoE ${spell.aoeRadius}ft</span>`);
-    if (spell.save) tags.push(`<span class="spell-tag save">${spell.save} Save</span>`);
-    tags.push(`<span class="spell-tag dmg">${spell.damage} ${spell.damageType}</span>`);
-    card.innerHTML = `
-      <div class="spell-name">${spell.name}</div>
-      <div class="spell-info">Lv.${spell.level} — ${spell.description}</div>
-      <div class="spell-tags">${tags.join("")}</div>
-    `;
-    card.addEventListener("click", () => onSpellSelected(key, spell));
-    spellGrid.appendChild(card);
+
+  // Use character spells from D&D Beyond if available, else fallback to hardcoded
+  const charSpells = currentCharData?.spells || [];
+  const hasCharSpells = charSpells.length > 0;
+
+  if (hasCharSpells) {
+    // Build level tabs
+    const levels = new Set(charSpells.map(s => s.level));
+    const tabBar = document.createElement("div");
+    tabBar.className = "spell-level-tabs";
+    const allTab = document.createElement("span");
+    allTab.className = `spell-level-tab${currentSpellFilter === "all" ? " active" : ""}`;
+    allTab.textContent = "All";
+    allTab.dataset.filter = "all";
+    tabBar.appendChild(allTab);
+    for (const lv of [...levels].sort((a, b) => a - b)) {
+      const tab = document.createElement("span");
+      const filterVal = lv === 0 ? "cantrip" : String(lv);
+      tab.className = `spell-level-tab${currentSpellFilter === filterVal ? " active" : ""}`;
+      tab.textContent = lv === 0 ? "Cantrip" : `Lv.${lv}`;
+      tab.dataset.filter = filterVal;
+      tabBar.appendChild(tab);
+    }
+    tabBar.addEventListener("click", (e) => {
+      const tab = e.target.closest(".spell-level-tab");
+      if (!tab) return;
+      currentSpellFilter = tab.dataset.filter;
+      buildSpellGrid();
+    });
+    spellGrid.appendChild(tabBar);
+
+    // Filter
+    let filtered = charSpells;
+    if (currentSpellFilter === "cantrip") filtered = charSpells.filter(s => s.level === 0);
+    else if (currentSpellFilter !== "all") filtered = charSpells.filter(s => s.level === parseInt(currentSpellFilter));
+
+    // Only show prepared spells + cantrips (or all if filter applied)
+    filtered = filtered.filter(s => s.level === 0 || s.prepared);
+
+    if (filtered.length === 0) {
+      const empty = document.createElement("div");
+      empty.style.cssText = "color:#555;font-size:10px;text-align:center;padding:16px";
+      empty.textContent = "No spells at this level";
+      spellGrid.appendChild(empty);
+      return;
+    }
+
+    for (const spell of filtered) {
+      const card = document.createElement("div");
+      card.className = "spell-card";
+      if (spell.isHealing) card.classList.add("healing");
+      card.dataset.spellKey = spell.key;
+
+      const tags = [];
+      if (spell.isAoE) tags.push(`<span class="spell-tag aoe">AoE ${spell.aoeRadius}ft</span>`);
+      if (spell.save) tags.push(`<span class="spell-tag save">${spell.save} Save</span>`);
+      if (spell.isAttack) tags.push(`<span class="spell-tag atk">Attack +${spell.attackBonus}</span>`);
+      if (spell.damage) tags.push(`<span class="spell-tag dmg">${spell.damage} ${spell.damageType || ""}</span>`);
+      if (spell.isHealing) tags.push(`<span class="spell-tag heal">Heal</span>`);
+      if (spell.concentration) tags.push(`<span class="spell-tag conc">Conc.</span>`);
+      if (spell.ritual) tags.push(`<span class="spell-tag ritual">Ritual</span>`);
+
+      const lvStr = spell.level === 0 ? "Cantrip" : `Lv.${spell.level}`;
+      card.innerHTML = `
+        <div class="spell-name">${spell.name}</div>
+        <div class="spell-info">${lvStr} — ${spell.description}</div>
+        <div class="spell-tags">${tags.join("")}</div>
+      `;
+
+      // Only allow combat spells (has damage, save, or attack)
+      const isCombat = spell.damage || spell.save || spell.isAttack;
+      if (!isCombat) {
+        card.classList.add("non-combat");
+        card.title = "Non-combat spell";
+      }
+
+      card.addEventListener("click", () => {
+        if (!isCombat) {
+          logCombat(`<strong>${currentCharData?.name}</strong> casts <strong>${spell.name}</strong>`, "spell");
+          hideSpellPicker();
+          resetCombat();
+          return;
+        }
+        onSpellSelected(spell.key, spell);
+      });
+      spellGrid.appendChild(card);
+    }
+  } else {
+    // Fallback: hardcoded spells
+    for (const [key, spell] of Object.entries(SPELLS)) {
+      const card = document.createElement("div");
+      card.className = "spell-card";
+      card.dataset.spellKey = key;
+      const tags = [];
+      if (spell.isAoE) tags.push(`<span class="spell-tag aoe">AoE ${spell.aoeRadius}ft</span>`);
+      if (spell.save) tags.push(`<span class="spell-tag save">${spell.save} Save</span>`);
+      tags.push(`<span class="spell-tag dmg">${spell.damage} ${spell.damageType}</span>`);
+      card.innerHTML = `
+        <div class="spell-name">${spell.name}</div>
+        <div class="spell-info">Lv.${spell.level} — ${spell.description}</div>
+        <div class="spell-tags">${tags.join("")}</div>
+      `;
+      card.addEventListener("click", () => onSpellSelected(key, spell));
+      spellGrid.appendChild(card);
+    }
   }
 }
 
@@ -234,19 +326,33 @@ function onSpellSelected(key, spell) {
   selectedSpell = { key, ...spell };
   hideSpellPicker();
 
+  attackerData = { ...currentCharData };
+  attackerTokenId = currentTokenId;
+  document.querySelector(".hotbar-btn.spell")?.classList.add("active-action");
+
   if (spell.isAoE) {
     combatState = COMBAT.AOE_CASTING;
-    attackerData = { ...currentCharData };
-    attackerTokenId = currentTokenId;
-    document.querySelector(".hotbar-btn.spell")?.classList.add("active-action");
     showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token as the AoE center...");
     logCombat(`<strong>${attackerData.name}</strong> prepares <strong>${spell.name}</strong> (${spell.aoeRadius}ft radius)`, "spell");
+  } else if (spell.isAttack) {
+    // Spell attack roll (like Eldritch Blast, Fire Bolt) — use attack flow
+    combatAction = "spell-attack";
+    combatState = COMBAT.TARGETING;
+    selectedWeapon = {
+      name: spell.name,
+      attackBonus: spell.attackBonus || 0,
+      damage: spell.damage || "1d10",
+      damageType: spell.damageType || "Force",
+      damageMod: 0,
+      attackType: "ranged",
+      properties: [],
+      mastery: [],
+    };
+    showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token...");
+    logCombat(`<strong>${attackerData.name}</strong> prepares <strong>${spell.name}</strong>`, "spell");
   } else {
     combatAction = "spell-targeted";
-    attackerData = { ...currentCharData };
-    attackerTokenId = currentTokenId;
     combatState = COMBAT.TARGETING;
-    document.querySelector(".hotbar-btn.spell")?.classList.add("active-action");
     showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token...");
     logCombat(`<strong>${attackerData.name}</strong> prepares <strong>${spell.name}</strong>`, "spell");
   }
@@ -677,7 +783,7 @@ function hideOtherPickers(except) {
 async function castAoeSpell(centerToken) {
   const spell = selectedSpell;
   const caster = attackerData;
-  const dc = getSpellcastingDC(caster);
+  const dc = spell.spellDC || getSpellcastingDC(caster);
 
   showCombatOverlay(`${spell.name} — DC ${dc}`, "Finding targets in radius...");
 
@@ -1951,7 +2057,7 @@ async function pickTarget(targetToken) {
 async function castSingleTargetSaveSpell(targetToken) {
   const spell = selectedSpell;
   const caster = attackerData;
-  const dc = getSpellcastingDC(caster);
+  const dc = spell.spellDC || getSpellcastingDC(caster);
   const meta = targetToken.metadata?.[METADATA_KEY];
   const char = meta?.character;
   const name = char?.name || targetToken.name || "Target";

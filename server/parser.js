@@ -18,6 +18,7 @@ export function parseCharacter(raw) {
   const skills = parseSkills(d, stats, profBonus);
   const bonusActions = parseBonusActions(d, classes, weapons);
   const inventory = parseInventory(d);
+  const spells = parseSpells(d, stats, profBonus);
 
   // Currency
   const currencies = d.currencies || {};
@@ -47,6 +48,7 @@ export function parseCharacter(raw) {
     bonusActions,
     inventory,
     currency,
+    spells,
   };
 }
 
@@ -516,4 +518,176 @@ function parseInventory(d) {
 function getProficiencyBonus(classes) {
   const level = classes.reduce((sum, c) => sum + c.level, 0);
   return Math.ceil(level / 4) + 1;
+}
+
+// ═══════════════════════════════════════════
+// SPELL PARSER — D&D Beyond → combat spells
+// ═══════════════════════════════════════════
+
+const DAMAGE_TYPE_COLORS = {
+  Fire: "#ff4400", Cold: "#88ccff", Lightning: "#ffee44", Thunder: "#4488ff",
+  Acid: "#66cc33", Poison: "#44aa44", Necrotic: "#664488", Radiant: "#ffdd44",
+  Psychic: "#dd44dd", Force: "#aa88ff", Bludgeoning: "#888888",
+  Piercing: "#888888", Slashing: "#888888",
+};
+
+const SAVE_ABILITY_MAP = {
+  1: "STR", 2: "DEX", 3: "CON", 4: "INT", 5: "WIS", 6: "CHA",
+};
+
+// D&D Beyond activation types: 1=Action, 3=Bonus Action, 5=Reaction, 6=Minutes, etc.
+const ACTIVATION_ACTION = 1;
+const ACTIVATION_BONUS = 3;
+
+function parseSpells(d, stats, profBonus) {
+  const spellList = [];
+  const seen = new Set();
+
+  // Determine spellcasting ability
+  const intMod = stats.find(s => s.name === "INT")?.modifier || 0;
+  const wisMod = stats.find(s => s.name === "WIS")?.modifier || 0;
+  const chaMod = stats.find(s => s.name === "CHA")?.modifier || 0;
+  const castMod = Math.max(intMod, wisMod, chaMod);
+  const spellDC = 8 + profBonus + castMod;
+  const spellAttackBonus = profBonus + castMod;
+
+  // Gather spells from classSpells, race spells, feat spells, etc.
+  const allSpellSources = [
+    ...(d.classSpells || []),
+    ...(d.spells?.race || []),
+    ...(d.spells?.feat || []),
+    ...(d.spells?.item || []),
+    ...(d.spells?.class || []),
+  ];
+
+  for (const source of allSpellSources) {
+    // classSpells has .spells array; race/feat/item spells are direct arrays
+    const spells = source.spells || (Array.isArray(source) ? source : [source]);
+    for (const spell of spells) {
+      const def = spell.definition || spell;
+      if (!def || !def.name) continue;
+
+      // Skip duplicates
+      const spellKey = def.name.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      if (seen.has(spellKey)) continue;
+      seen.add(spellKey);
+
+      const level = def.level ?? 0;
+      const school = def.school || "";
+      const range = def.range || {};
+      const rangeValue = range.rangeValue || range.range || 0;
+      const activation = def.activation || {};
+      const activationType = activation.activationType || ACTIVATION_ACTION;
+      const concentration = def.concentration || false;
+      const ritual = def.ritual || false;
+      const duration = def.duration || {};
+      const components = def.components || [];
+
+      // Parse damage
+      let damage = null;
+      let damageType = null;
+      let isHealing = false;
+
+      // Check modifiers for damage dice
+      const modifiers = def.modifiers || [];
+      for (const mod of modifiers) {
+        if (mod.type === "damage" && mod.die) {
+          const die = mod.die;
+          if (die.diceString) {
+            damage = die.diceString;
+            damageType = mod.subType || mod.friendlySubtypeName || null;
+          }
+        }
+        if (mod.type === "bonus" && mod.subType === "hit-points") {
+          isHealing = true;
+          if (mod.die?.diceString) damage = mod.die.diceString;
+        }
+      }
+
+      // Fallback: check atHigherLevels for damage scaling hint
+      if (!damage && def.atHigherLevels?.scaleType === "characterlevel") {
+        const scales = def.atHigherLevels?.higherLevelDefinitions || [];
+        // Try to get base damage from cantrip scale
+        if (scales.length > 0) {
+          const firstScale = scales[0];
+          if (firstScale.dice) damage = firstScale.dice.diceString;
+          if (firstScale.damageType) damageType = firstScale.damageType;
+        }
+      }
+
+      // Parse save type
+      let saveType = null;
+      if (def.saveDcAbilityId) {
+        saveType = SAVE_ABILITY_MAP[def.saveDcAbilityId] || null;
+      }
+      // Also check requiresSavingThrow
+      if (!saveType && def.requiresSavingThrow) {
+        // Try to find save ability from modifiers
+        for (const mod of modifiers) {
+          if (mod.type === "damage" && mod.atHigherLevels?.scaleType) {
+            // common pattern — the save type is at spell definition level
+          }
+        }
+      }
+
+      // Determine AoE
+      let isAoE = false;
+      let aoeRadius = 0;
+      const aoeType = range.aoeType || null;
+      const aoeSize = range.aoeSize || range.aoeValue || 0;
+      if (aoeType && aoeSize > 0) {
+        isAoE = true;
+        aoeRadius = aoeSize;
+      }
+
+      // Determine if it's an attack spell (spell attack roll)
+      const isAttack = def.attackType === 1 || def.attackType === 2; // 1=Melee spell, 2=Ranged spell
+
+      // Build description
+      const descParts = [];
+      if (isAoE) descParts.push(`${aoeSize}ft ${aoeType || "radius"}`);
+      else if (rangeValue > 0) descParts.push(`${rangeValue}ft`);
+      else descParts.push("Touch");
+      if (concentration) descParts.push("Conc.");
+      if (ritual) descParts.push("Ritual");
+      if (isHealing) descParts.push("Healing");
+
+      // Determine color
+      const color = DAMAGE_TYPE_COLORS[damageType] || "#aa88ff";
+
+      const parsed = {
+        key: spellKey,
+        name: def.name,
+        level,
+        school,
+        damage: damage || null,
+        damageType: damageType || null,
+        save: saveType,
+        isAoE,
+        aoeRadius,
+        aoeType: aoeType || null,
+        isAttack,
+        attackBonus: isAttack ? spellAttackBonus : null,
+        range: rangeValue,
+        isHealing,
+        concentration,
+        ritual,
+        color,
+        description: descParts.join(", "),
+        activationType,
+        prepared: spell.prepared ?? spell.alwaysPrepared ?? true,
+        spellDC,
+      };
+
+      spellList.push(parsed);
+    }
+  }
+
+  // Sort: cantrips first, then by level, then alphabetical
+  spellList.sort((a, b) => {
+    if (a.level !== b.level) return a.level - b.level;
+    return a.name.localeCompare(b.name);
+  });
+
+  return spellList;
 }

@@ -224,7 +224,7 @@
     #spell-picker { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1028, #16102e); border: 2px solid #a045e9; border-radius: 10px; margin-top: 6px; }
     #spell-picker.visible { display: block; }
     .spell-picker-title { color: #a045e9; font-size: 11px; font-weight: 700; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
-    .spell-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+    .spell-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; max-height: 320px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #a045e944 transparent; }
     .spell-card { padding: 6px 8px; background: #0f1028; border: 1px solid #2a1a4e; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
     .spell-card:hover { border-color: #a045e9; background: #1a1038; }
     .spell-card .spell-name { font-size: 11px; font-weight: 700; color: #d0b0f0; }
@@ -234,6 +234,17 @@
     .spell-tag.aoe { background: #e9456033; color: #e94560; }
     .spell-tag.save { background: #e9a04533; color: #e9a045; }
     .spell-tag.dmg { background: #a045e933; color: #a045e9; }
+    .spell-tag.atk { background: #45e96033; color: #45e960; }
+    .spell-tag.heal { background: #45e9a033; color: #45e9a0; }
+    .spell-tag.conc { background: #e9c64533; color: #e9c645; }
+    .spell-tag.ritual { background: #4590e933; color: #4590e9; }
+    .spell-card.non-combat { opacity: 0.5; }
+    .spell-card.non-combat:hover { opacity: 0.8; }
+    .spell-card.healing .spell-name { color: #80f0b0; }
+    .spell-level-tabs { grid-column: 1 / -1; display: flex; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
+    .spell-level-tab { font-size: 9px; padding: 2px 8px; border-radius: 4px; cursor: pointer; color: #7766aa; background: #0f1028; border: 1px solid #2a1a4e; transition: all 0.15s; }
+    .spell-level-tab:hover { border-color: #a045e9; color: #d0b0f0; }
+    .spell-level-tab.active { background: #a045e944; border-color: #a045e9; color: #fff; }
     .spell-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #a045e944; border-radius: 4px; background: none; color: #a045e9; font-size: 10px; cursor: pointer; }
     .spell-cancel:hover { background: #a045e922; }
 
