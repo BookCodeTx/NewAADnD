@@ -299,6 +299,24 @@
     .inv-item-weight { font-size: 9px; color: #6a7a8a; flex-shrink: 0; min-width: 32px; text-align: right; }
     .inv-item-equipped-tag { font-size: 8px; color: #45e9a0; background: #45e9a015; padding: 1px 4px; border-radius: 3px; flex-shrink: 0; }
     .inv-footer { margin-top: 4px; font-size: 9px; color: #6a7a8a; text-align: right; padding-top: 4px; border-top: 1px solid #ffffff0a; }
+    .inv-item-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+    .inv-item:hover .inv-item-actions { opacity: 1; }
+    .inv-item-action { width: 18px; height: 18px; border: 1px solid #ffffff22; border-radius: 3px; background: none; color: #8899aa; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; padding: 0; }
+    .inv-item-action:hover { background: #ffffff15; color: #fff; }
+    .inv-item-action.equip { color: #45e9a0; border-color: #45e9a033; }
+    .inv-item-action.equip:hover { background: #45e9a022; }
+    .inv-item-action.equip.active { background: #45e9a033; color: #45e9a0; }
+    .inv-item-action.delete { color: #e94560; border-color: #e9456033; }
+    .inv-item-action.delete:hover { background: #e9456022; }
+    .inv-item-qty-edit { width: 32px; padding: 1px 2px; border: 1px solid #e9c64544; border-radius: 3px; background: #0a0a0a; color: #e9c645; font-size: 10px; text-align: center; }
+    .inv-item-qty-edit:focus { outline: none; border-color: #e9c645; }
+    .inv-add-row { display: flex; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #ffffff0a; }
+    .inv-add-input { flex: 1; padding: 4px 8px; border: 1px solid #e9c64533; border-radius: 4px; background: #0a0a06; color: #ddd; font-size: 10px; }
+    .inv-add-input:focus { outline: none; border-color: #e9c645; }
+    .inv-add-qty { width: 40px; padding: 4px; border: 1px solid #e9c64533; border-radius: 4px; background: #0a0a06; color: #e9c645; font-size: 10px; text-align: center; }
+    .inv-add-qty:focus { outline: none; border-color: #e9c645; }
+    #inv-add-btn { padding: 4px 10px; border: 1px solid #e9c645; border-radius: 4px; background: #e9c64522; color: #e9c645; font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    #inv-add-btn:hover { background: #e9c645; color: #0a0a06; }
     .inv-close { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #e9c64544; border-radius: 4px; background: none; color: #e9c645; font-size: 10px; cursor: pointer; }
     .inv-close:hover { background: #e9c64522; }
 
@@ -651,6 +669,11 @@
       </div>
       <div class="inv-list" id="inv-list"></div>
       <div class="inv-footer" id="inv-footer"></div>
+      <div class="inv-add-row" id="inv-add-row">
+        <input type="text" id="inv-add-name" placeholder="Item name" class="inv-add-input" />
+        <input type="number" id="inv-add-qty" placeholder="Qty" min="1" value="1" class="inv-add-qty" />
+        <button id="inv-add-btn">+ Add</button>
+      </div>
       <button class="inv-close" id="inv-close">Close</button>
     </div>
 

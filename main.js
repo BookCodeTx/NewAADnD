@@ -730,13 +730,22 @@ function buildInventoryList() {
     const weightStr = item.weight ? `<span class="inv-item-weight">${item.weight * (item.quantity || 1)} lb</span>` : "";
     const equippedTag = item.equipped ? '<span class="inv-item-equipped-tag">E</span>' : "";
 
+    const idx = items.indexOf(item);
+    const equipTitle = item.equipped ? "Unequip" : "Equip";
+    const equipIcon = item.equipped ? "✓" : "E";
+
     el.innerHTML = `
       <span class="inv-item-icon">${icon}</span>
       <div class="inv-item-info">
         <div class="inv-item-name">${item.name}${item.isMagic ? " ✦" : ""}</div>
         <div class="inv-item-detail">${detail}</div>
       </div>
-      ${qtyStr}${weightStr}${equippedTag}
+      <input type="number" class="inv-item-qty-edit" value="${item.quantity || 1}" min="1" data-idx="${idx}" title="Quantity" />
+      ${weightStr}
+      <div class="inv-item-actions">
+        <button class="inv-item-action equip ${item.equipped ? "active" : ""}" data-idx="${idx}" title="${equipTitle}">${equipIcon}</button>
+        <button class="inv-item-action delete" data-idx="${idx}" title="Remove">✕</button>
+      </div>
     `;
 
     invList.appendChild(el);
@@ -758,6 +767,120 @@ document.getElementById("inv-tabs")?.addEventListener("click", (e) => {
   if (!tab) return;
   currentInvFilter = tab.dataset.filter;
   buildInventoryList();
+});
+
+// ── Inventory edit handlers (delegated from inv-list) ──
+invList?.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".inv-item-action");
+  if (!btn || !currentCharData || !currentTokenId) return;
+
+  const idx = parseInt(btn.dataset.idx);
+  const items = currentCharData.inventory || [];
+  if (idx < 0 || idx >= items.length) return;
+
+  if (btn.classList.contains("equip")) {
+    // Toggle equipped
+    items[idx].equipped = !items[idx].equipped;
+    await saveInventory();
+    buildInventoryList();
+  } else if (btn.classList.contains("delete")) {
+    // Remove item
+    const name = items[idx].name;
+    items.splice(idx, 1);
+    await saveInventory();
+    buildInventoryList();
+    logCombat(`🗑️ <strong>${currentCharData.name}</strong> removed <strong>${name}</strong> from inventory`, "info");
+  }
+});
+
+invList?.addEventListener("change", async (e) => {
+  const input = e.target.closest(".inv-item-qty-edit");
+  if (!input || !currentCharData || !currentTokenId) return;
+
+  const idx = parseInt(input.dataset.idx);
+  const items = currentCharData.inventory || [];
+  if (idx < 0 || idx >= items.length) return;
+
+  const newQty = Math.max(1, parseInt(input.value) || 1);
+  items[idx].quantity = newQty;
+  await saveInventory();
+  buildInventoryList();
+});
+
+// Add item
+document.getElementById("inv-add-btn")?.addEventListener("click", async () => {
+  const nameInput = document.getElementById("inv-add-name");
+  const qtyInput = document.getElementById("inv-add-qty");
+  const name = nameInput.value.trim();
+  if (!name || !currentCharData || !currentTokenId) return;
+
+  const qty = Math.max(1, parseInt(qtyInput.value) || 1);
+  const items = currentCharData.inventory || [];
+  items.push({
+    name,
+    type: "Other",
+    subType: "",
+    equipped: false,
+    quantity: qty,
+    weight: 0,
+    cost: 0,
+    costUnit: "gp",
+    rarity: "Common",
+    description: "",
+    notes: "",
+    isAttuned: false,
+    isMagic: false,
+    canEquip: true,
+  });
+  currentCharData.inventory = items;
+  await saveInventory();
+  buildInventoryList();
+  nameInput.value = "";
+  qtyInput.value = "1";
+  logCombat(`🎒 <strong>${currentCharData.name}</strong> added <strong>${name}</strong> x${qty} to inventory`, "info");
+});
+
+document.getElementById("inv-add-name")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("inv-add-btn")?.click();
+});
+
+async function saveInventory() {
+  if (!currentTokenId || !currentCharData) return;
+  await OBR.scene.items.updateItems([currentTokenId], (items) => {
+    for (const item of items) {
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta?.character) return;
+      meta.character.inventory = currentCharData.inventory;
+      meta.character.currency = currentCharData.currency;
+      meta.lastUpdated = Date.now();
+    }
+  });
+  currentCharData._lastUpdated = Date.now();
+}
+
+// ── Currency edit ──
+invCurrency?.addEventListener("dblclick", () => {
+  if (!currentCharData) return;
+  const currency = currentCharData.currency || {};
+  invCurrency.innerHTML = `
+    <input type="number" class="inv-coin-edit" data-coin="pp" value="${currency.pp || 0}" placeholder="pp" title="Platinum" />
+    <input type="number" class="inv-coin-edit" data-coin="gp" value="${currency.gp || 0}" placeholder="gp" title="Gold" />
+    <input type="number" class="inv-coin-edit" data-coin="ep" value="${currency.ep || 0}" placeholder="ep" title="Electrum" />
+    <input type="number" class="inv-coin-edit" data-coin="sp" value="${currency.sp || 0}" placeholder="sp" title="Silver" />
+    <input type="number" class="inv-coin-edit" data-coin="cp" value="${currency.cp || 0}" placeholder="cp" title="Copper" />
+    <button class="inv-coin-save">✓</button>
+  `;
+
+  invCurrency.querySelector(".inv-coin-save")?.addEventListener("click", async () => {
+    const newCurrency = {};
+    invCurrency.querySelectorAll(".inv-coin-edit").forEach(input => {
+      newCurrency[input.dataset.coin] = Math.max(0, parseInt(input.value) || 0);
+    });
+    currentCharData.currency = newCurrency;
+    await saveInventory();
+    buildInventoryList();
+    logCombat(`💰 <strong>${currentCharData.name}</strong> updated currency`, "info");
+  });
 });
 
 invClose?.addEventListener("click", hideInventoryPanel);
