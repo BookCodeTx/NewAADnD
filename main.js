@@ -3865,13 +3865,9 @@ async function resolveAttackRoll(result) {
   attackRollResult = { natValue };
   combatState = COMBAT.ROLLING_DAMAGE;
 
-  // Auto-roll damage dice immediately after hit
-  if (selectedWeapon && selectedWeapon.damage) {
-    await rollDamageDice(isCrit, targetName);
-  } else {
-    // Fallback to manual only if no weapon data
-    showDamageInput("Enter Damage");
-  }
+  // Show damage roll panel — player clicks 🎲 to roll
+  const hitLabel = isCrit ? `CRIT! → ${targetName}` : `HIT! → ${targetName}`;
+  showDamageRollPanel(hitLabel, isCrit);
 }
 
 // ── Damage Roll Panel (player clicks to roll) ──
@@ -3907,13 +3903,12 @@ function showDamageRollPanel(title, isCrit) {
 function hideDamageRollPanel() { damageRollPanel.classList.remove("visible"); }
 
 damageRollBtn.addEventListener("click", async () => {
-  if (!selectedWeapon || !selectedWeapon.damage) {
-    // Fallback to manual if no weapon data
-    hideDamageRollPanel();
-    showDamageInput("Enter Damage");
-    return;
-  }
   hideDamageRollPanel();
+  if (!selectedWeapon || !selectedWeapon.damage) {
+    // No weapon data — roll 1d4 as fallback
+    selectedWeapon = selectedWeapon || { name: "Attack", damage: "1d4", damageMod: 0, damageType: "damage", attackType: "melee", properties: [], mastery: [] };
+    if (!selectedWeapon.damage) selectedWeapon.damage = "1d4";
+  }
   const targetName = targetData?.name || "Target";
   await rollDamageDice(pendingDamageCrit, targetName);
 });
