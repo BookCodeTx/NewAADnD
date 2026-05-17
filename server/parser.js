@@ -163,9 +163,12 @@ function parseSavingThrows(d, stats, profBonus) {
   });
 }
 
+// D&D Beyond activation types
+const ACTIVATION_BONUS_ACTION = 3;  // activationType=3 means Bonus Action
+
 function parseBonusActions(d, classes, weapons) {
   const actions = [];
-  const classNames = classes.map((c) => c.name.toLowerCase());
+  const seenKeys = new Set();
 
   // Off-hand attack if dual wielding (light weapon equipped that's not the primary)
   const equippedWeapons = weapons.filter((w) => w.equipped);
@@ -179,50 +182,84 @@ function parseBonusActions(d, classes, weapons) {
         type: "attack",
         weapon: offhand,
       });
+      seenKeys.add("offhand-attack");
     }
   }
 
-  // Class-specific bonus actions
-  if (classNames.includes("rogue")) {
-    actions.push(
-      { key: "cunning-dash", name: "Cunning Action: Dash", description: "Double movement this turn", type: "movement" },
-      { key: "cunning-disengage", name: "Cunning Action: Disengage", description: "Movement doesn't provoke attacks of opportunity", type: "movement" },
-      { key: "cunning-hide", name: "Cunning Action: Hide", description: "Roll Stealth to hide", type: "skill", skill: "stealth" },
-    );
+  // Parse bonus actions from d.actions (class, race, feat, item, background)
+  const actionSources = ["class", "race", "feat", "item", "background"];
+  for (const src of actionSources) {
+    const srcActions = d.actions?.[src] || [];
+    for (const a of srcActions) {
+      const activationType = a.activation?.activationType;
+      if (activationType !== ACTIVATION_BONUS_ACTION) continue;
+
+      const key = a.name?.toLowerCase().replace(/[^a-z0-9]+/g, "-") || `action-${a.id}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+
+      // Clean HTML from description/snippet
+      const rawDesc = a.snippet || a.description || "";
+      const description = rawDesc.replace(/<[^>]+>/g, "").replace(/&[a-z]+;/g, " ").trim().substring(0, 200);
+
+      // Determine action type
+      let type = "other";
+      if (a.attackSubtype) type = "attack";
+      else if (a.dice) type = "spell";
+      else if (a.displayAsAttack) type = "spell";
+
+      // Build dice string if available
+      let dice = null;
+      if (a.dice) {
+        dice = a.dice.diceString || (a.dice.diceCount && a.dice.diceValue ? `${a.dice.diceCount}d${a.dice.diceValue}` : null);
+      }
+
+      // Limited use info
+      let usesText = "";
+      if (a.limitedUse) {
+        const maxUses = a.limitedUse.maxUses || 0;
+        const used = a.limitedUse.numberUsed || 0;
+        const resetNames = { 1: "Short Rest", 2: "Long Rest", 3: "Dawn", 4: "Dusk" };
+        const resetType = resetNames[a.limitedUse.resetType] || "";
+        usesText = ` (${maxUses - used}/${maxUses}${resetType ? " per " + resetType : ""})`;
+      }
+
+      actions.push({
+        key,
+        name: a.name + (usesText ? usesText : ""),
+        description,
+        type,
+        dice,
+        damageTypeId: a.damageTypeId,
+      });
+    }
   }
-  if (classNames.includes("monk")) {
-    actions.push(
-      { key: "flurry-of-blows", name: "Flurry of Blows", description: "Two unarmed strikes (1 ki)", type: "attack" },
-      { key: "patient-defense", name: "Patient Defense", description: "Dodge action (1 ki)", type: "defense" },
-      { key: "step-of-the-wind", name: "Step of the Wind", description: "Disengage or Dash + jump x2 (1 ki)", type: "movement" },
-    );
-  }
-  if (classNames.includes("ranger")) {
-    actions.push(
-      { key: "hunters-mark", name: "Hunter's Mark", description: "Mark target: +1d6 damage from your attacks (concentration)", type: "spell" },
-      { key: "two-weapon-fighting", name: "Two-Weapon Fighting", description: "Off-hand attack with light weapon", type: "attack" },
-    );
-  }
-  if (classNames.includes("paladin")) {
-    actions.push({ key: "divine-favor", name: "Divine Favor", description: "Weapon attacks deal +1d4 radiant (concentration)", type: "spell" });
-  }
-  if (classNames.includes("bard")) {
-    actions.push({ key: "bardic-inspiration", name: "Bardic Inspiration", description: "Grant ally a Bardic Inspiration die", type: "support" });
-  }
-  if (classNames.includes("cleric")) {
-    actions.push({ key: "healing-word", name: "Healing Word", description: "Heal ally 1d4+spell mod (60ft)", type: "spell" });
-  }
-  if (classNames.includes("sorcerer")) {
-    actions.push({ key: "quickened-spell", name: "Quickened Spell", description: "Cast 1-action spell as bonus action (2 sorcery points)", type: "spell" });
-  }
-  if (classNames.includes("warlock")) {
-    actions.push({ key: "hex", name: "Hex", description: "Curse target: +1d6 necrotic from your attacks (concentration)", type: "spell" });
+
+  // Parse bonus action spells from classSpells
+  for (const cs of (d.classSpells || [])) {
+    for (const s of (cs.spells || [])) {
+      const def = s.definition;
+      if (!def || def.activation?.activationType !== ACTIVATION_BONUS_ACTION) continue;
+
+      const key = def.name?.toLowerCase().replace(/[^a-z0-9]+/g, "-") || `spell-${def.id}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+
+      const rawDesc = def.snippet || def.description || "";
+      const description = rawDesc.replace(/<[^>]+>/g, "").replace(/&[a-z]+;/g, " ").trim().substring(0, 200);
+
+      actions.push({
+        key,
+        name: def.name,
+        description,
+        type: "spell",
+      });
+    }
   }
 
   // Universal bonus actions
   actions.push(
-    { key: "potion", name: "Drink Potion", description: "Quaff a potion (bonus action with feat)", type: "item" },
-    { key: "second-wind", name: "Second Wind (Fighter)", description: "Heal 1d10+level (1/short rest)", type: "heal", healDice: "1d10" },
+    { key: "potion", name: "Drink Potion", description: "Quaff a potion as a bonus action", type: "item" },
   );
 
   return actions;

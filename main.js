@@ -250,8 +250,9 @@ function buildSpellGrid() {
           pips.push(`<span class="slot-pip ${i < slot.remaining ? "filled" : "empty"}"></span>`);
         }
         const pactLabel = slot.isPact ? " (Pact)" : "";
+        const depletedClass = slot.remaining === 0 ? " depleted" : "";
         slotsRow.innerHTML += `
-          <div class="spell-slot-group" data-slot-level="${slot.level}">
+          <div class="spell-slot-group${depletedClass}" data-slot-level="${slot.level}">
             <span class="slot-label">Lv.${slot.level}${pactLabel}</span>
             <span class="slot-pips">${pips.join("")}</span>
             <span class="slot-count">${slot.remaining}/${slot.max}</span>
@@ -706,12 +707,15 @@ saveCancel.addEventListener("click", hideSavePicker);
 function buildBonusGrid() {
   bonusGrid.innerHTML = "";
   const actions = currentCharData?.bonusActions || [];
-  if (actions.length === 0) { bonusGrid.innerHTML = '<div style="color:#8899aa;font-size:10px;text-align:center;padding:8px">No bonus actions available for this class</div>'; return; }
+  if (actions.length === 0) { bonusGrid.innerHTML = '<div style="color:#8899aa;font-size:10px;text-align:center;padding:8px">No bonus actions available</div>'; return; }
 
+  const typeIcons = { attack: "⚔️", spell: "🔮", movement: "💨", defense: "🛡️", support: "🎵", heal: "💚", item: "🧪", damage: "💥", other: "⚡" };
   for (const a of actions) {
     const card = document.createElement("div");
     card.className = "bonus-card";
-    card.innerHTML = `<div class="bonus-name">${a.name}</div><div class="bonus-desc">${a.description}</div>`;
+    const icon = typeIcons[a.type] || "⚡";
+    const diceTag = a.dice ? `<span class="bonus-dice">${a.dice}</span>` : "";
+    card.innerHTML = `<div class="bonus-name">${icon} ${a.name}${diceTag}</div><div class="bonus-desc">${a.description}</div>`;
     card.addEventListener("click", () => onBonusSelected(a));
     bonusGrid.appendChild(card);
   }
@@ -1883,8 +1887,9 @@ async function onBonusSelected(action) {
   hideBonusPicker();
   logCombat(`⚡ <strong>${currentCharData.name}</strong> uses bonus action: <strong>${action.name}</strong>`, "info");
 
-  if (action.type === "attack") {
-    selectedWeapon = action.weapon || null;
+  if (action.type === "attack" && action.weapon) {
+    // Off-hand weapon attack — enter targeting mode
+    selectedWeapon = action.weapon;
     combatState = COMBAT.TARGETING;
     combatAction = "attack";
     attackerData = { ...currentCharData };
@@ -1897,6 +1902,9 @@ async function onBonusSelected(action) {
   } else if (action.type === "heal" && action.healDice) {
     const lvl = currentCharData.level || 1;
     await rollDice(action.healDice, `${currentCharData.name} ${action.name}`, lvl);
+  } else if (action.dice) {
+    // Roll dice for bonus actions with dice (e.g. Hunter's Mark 1d6)
+    await rollDice(action.dice, `${currentCharData.name} ${action.name}`, 0);
   } else {
     await OBR.notification.show(`${currentCharData.name}: ${action.name} declared`, "INFO");
   }
@@ -1987,22 +1995,128 @@ async function castAoeSpell(centerToken) {
   const failCount = saveResults.filter((r) => !r.saved).length;
   const saveCount = saveResults.filter((r) => r.saved).length;
   showAoeResults(spell, dc, saveResults);
-  showCombatOverlay(`${spell.name}`, `${failCount} failed, ${saveCount} saved — enter damage`);
+  // If spell has no damage (e.g. AoE control spell) — just report saves
+  if (!spell.damage) {
+    showCombatOverlay(`${spell.name}`, `${failCount} failed, ${saveCount} saved`);
+    await OBR.notification.show(`${spell.name}: ${failCount} failed, ${saveCount} saved`, "SUCCESS");
+    setTimeout(() => resetCombat(), 3000);
+    return;
+  }
 
-  pendingAoeResults = saveResults;
-  combatState = COMBAT.ROLLING_DAMAGE;
-  showDamageInput(`${spell.name} — Enter full damage`);
+  showCombatOverlay(`${spell.name}`, `${failCount} failed, ${saveCount} saved — rolling damage...`);
+
+  // Auto-roll damage dice
+  const dmgNotation = spell.damage;
+  const dmgType = spell.damageType || "damage";
+  const dieType = parseDieType(dmgNotation) || "d6";
+
+  let diceTotal, individualResults;
+  let used3D = false;
+
+  if (diceReady && diceBox) {
+    try {
+      show3DOverlay(`${caster.name} ${spell.name} Damage`);
+      const results = await Promise.race([
+        diceBox.roll(dmgNotation),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+      ]);
+      diceTotal = results.reduce((sum, r) => sum + r.value, 0);
+      individualResults = results.map(r => r.value);
+      used3D = true;
+      playSfx("dice-hit");
+      await new Promise((r) => setTimeout(r, 800));
+    } catch (err) {
+      console.warn("[dice] 3D AoE damage roll failed, using canvas:", err.message);
+      hide3DOverlay();
+    }
+  }
+
+  if (!used3D) {
+    const rolled = rollDiceValues(dmgNotation);
+    diceTotal = rolled.diceTotal;
+    individualResults = rolled.individualResults;
+  }
+
+  const fullDamage = Math.max(0, diceTotal);
+  const halfDamage = Math.floor(fullDamage / 2);
+
+  const diceStr = individualResults.length > 1 ? `[${individualResults.join(", ")}]` : `${diceTotal}`;
+  const dmgLabel = `${caster.name} ${spell.name} Damage`;
+  const dmgResult = {
+    notation: dmgNotation, diceTotal, modifier: 0, finalTotal: fullDamage,
+    natValue: null, charName: caster.name, label: dmgLabel,
+    rollId: crypto.randomUUID(), individualResults,
+  };
+
+  if (used3D) {
+    show3DResult(dmgLabel, dmgResult);
+    await new Promise((r) => setTimeout(r, 4000));
+  } else {
+    showDiceResultDisplay(dmgLabel, dmgResult, dieType);
+    await new Promise((r) => setTimeout(r, 6000));
+  }
+
+  logCombat(
+    `<strong>${caster.name}</strong> ${spell.name} damage: ${dmgNotation} → ${diceStr} = <strong class="damage">${fullDamage}</strong> ${dmgType}`,
+    "damage"
+  );
+
+  if (used3D) hide3DOverlay();
+
+  // Update AoE results display with damage info
+  showAoeResults(spell, dc, saveResults, fullDamage, halfDamage);
+
+  // Apply damage to all targets
+  const tokenIdsToUpdate = saveResults.filter((r) => r.char).map((r) => r.token.id);
+  await OBR.scene.items.updateItems(tokenIdsToUpdate, (items) => {
+    for (const item of items) {
+      const r = saveResults.find((r) => r.token.id === item.id);
+      if (!r || !r.char) continue;
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta?.character) continue;
+      const dmg = r.saved ? halfDamage : fullDamage;
+      let remaining = dmg;
+      let temp = meta.character.hp.temp || 0;
+      if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
+      meta.character.hp.current = Math.max(0, meta.character.hp.current - remaining);
+      meta.character.hp.temp = temp;
+      meta.lastUpdated = Date.now();
+      logCombat(`<strong class="damage">${dmg}</strong> ${dmgType} → <strong>${r.name}</strong>${r.saved ? " (half)" : ""}`, "damage");
+    }
+  });
+
+  await syncInitiativeHP();
+  await broadcastSfx("damage");
+  for (const r of saveResults) {
+    const dmg = r.saved ? halfDamage : fullDamage;
+    if (dmg > 0) await showFloatingDamage(r.token.id, dmg, dmgType, { isSpell: true });
+    if (r.char) {
+      const meta = r.token.metadata?.[METADATA_KEY];
+      if (meta?.character?.hp?.current === 0) {
+        addSkullToToken(r.token.id);
+      }
+    }
+  }
+
+  showCombatOverlay(`${spell.name}: ${fullDamage} ${dmgType}!`, `${failCount} failed (full), ${saveCount} saved (half: ${halfDamage})`);
+  await OBR.notification.show(`${spell.name}: ${fullDamage} ${dmgType} (${halfDamage} on save)`, "SUCCESS");
+  setTimeout(() => resetCombat(), 3000);
 }
 
-function showAoeResults(spell, dc, results) {
-  aoeTitle.textContent = `${spell.name} — DC ${dc} ${spell.save} Save`;
+function showAoeResults(spell, dc, results, fullDmg = null, halfDmg = null) {
+  const dmgType = spell.damageType || "";
+  const hasDmg = fullDmg !== null;
+  aoeTitle.textContent = hasDmg
+    ? `${spell.name} — ${fullDmg} ${dmgType} (half: ${halfDmg})`
+    : `${spell.name} — DC ${dc} ${spell.save} Save`;
   aoeTargetList.innerHTML = results.map((r) => {
     const saveClass = r.saved ? "saved" : "failed";
     const saveText = r.autoFail ? "AUTO-FAIL" : `${r.roll}+${getSaveMod(r.char, spell.save)}=${r.total} ${r.saved ? "SAVE" : "FAIL"}`;
+    const dmgText = hasDmg ? ` → ${r.saved ? halfDmg : fullDmg}` : "";
     return `
       <div class="aoe-target ${saveClass}">
         <span class="aoe-name">${r.name}</span>
-        <span class="aoe-save-result">${saveText}</span>
+        <span class="aoe-save-result">${saveText}${dmgText}</span>
       </div>
     `;
   }).join("");
@@ -3448,13 +3562,121 @@ async function castSingleTargetSaveSpell(targetToken) {
   playSpellEffect(spell.damageType);
 
   const saveLabel = saved ? "SAVED" : "FAILED";
-  showCombatOverlay(`${spell.name}: ${saveLabel}!`, `Enter damage below`);
-  await OBR.notification.show(`${spell.name}: ${name} ${saveLabel}`, saved ? "WARNING" : "SUCCESS");
 
-  targetTokenId = targetToken.id;
-  targetData = char || null;
-  combatState = COMBAT.ROLLING_DAMAGE;
-  showDamageInput(`${spell.name} → ${name} (${saveLabel})`);
+  // If spell has no damage (e.g. Hold Person, Command) — just report save result
+  if (!spell.damage) {
+    showCombatOverlay(`${spell.name}: ${saveLabel}!`, saved ? `${name} resists the effect` : `${name} is affected!`);
+    await OBR.notification.show(`${spell.name}: ${name} ${saveLabel}`, saved ? "WARNING" : "SUCCESS");
+    setTimeout(() => resetCombat(), 3000);
+    return;
+  }
+
+  // Auto-roll damage dice
+  const dmgNotation = spell.damage;
+  const dmgType = spell.damageType || "damage";
+  const dieType = parseDieType(dmgNotation) || "d6";
+
+  let diceTotal, individualResults;
+  let used3D = false;
+
+  if (diceReady && diceBox) {
+    try {
+      show3DOverlay(`${caster.name} ${spell.name} Damage`);
+      const results = await Promise.race([
+        diceBox.roll(dmgNotation),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+      ]);
+      diceTotal = results.reduce((sum, r) => sum + r.value, 0);
+      individualResults = results.map(r => r.value);
+      used3D = true;
+      playSfx("dice-hit");
+      await new Promise((r) => setTimeout(r, 800));
+    } catch (err) {
+      console.warn("[dice] 3D spell damage roll failed, using canvas:", err.message);
+      hide3DOverlay();
+    }
+  }
+
+  if (!used3D) {
+    const rolled = rollDiceValues(dmgNotation);
+    diceTotal = rolled.diceTotal;
+    individualResults = rolled.individualResults;
+  }
+
+  const fullDamage = Math.max(0, diceTotal);
+  const appliedDamage = saved ? Math.floor(fullDamage / 2) : fullDamage;
+
+  const diceStr = individualResults.length > 1 ? `[${individualResults.join(", ")}]` : `${diceTotal}`;
+  const dmgLabel = `${caster.name} ${spell.name} Damage`;
+  const result = {
+    notation: dmgNotation, diceTotal, modifier: 0, finalTotal: fullDamage,
+    natValue: null, charName: caster.name, label: dmgLabel,
+    rollId: crypto.randomUUID(), individualResults,
+  };
+
+  if (used3D) {
+    show3DResult(dmgLabel, result);
+    await new Promise((r) => setTimeout(r, 4000));
+  } else {
+    showDiceResultDisplay(dmgLabel, result, dieType);
+    await new Promise((r) => setTimeout(r, 6000));
+  }
+
+  logCombat(
+    `<strong>${caster.name}</strong> ${spell.name} damage: ${dmgNotation} → ${diceStr} = <strong class="damage">${fullDamage}</strong> ${dmgType}`,
+    "damage"
+  );
+  if (saved) {
+    logCombat(`↳ ${name} saved — half damage: <strong class="damage">${appliedDamage}</strong>`, "info");
+  }
+
+  if (used3D) hide3DOverlay();
+
+  // Apply damage to target
+  if (char && appliedDamage > 0) {
+    let remaining = appliedDamage;
+    let newTemp = char.hp.temp || 0;
+    if (newTemp > 0) { const absorbed = Math.min(newTemp, remaining); newTemp -= absorbed; remaining -= absorbed; }
+    const newCurrent = Math.max(0, char.hp.current - remaining);
+    const isDown = newCurrent === 0;
+
+    await OBR.scene.items.updateItems([targetToken.id], (items) => {
+      for (const item of items) {
+        const m = item.metadata[METADATA_KEY];
+        if (!m?.character) return;
+        m.character.hp.current = newCurrent;
+        m.character.hp.temp = newTemp;
+        m.lastUpdated = Date.now();
+      }
+    });
+
+    await syncInitiativeHP();
+    await broadcastSfx("damage");
+    await showFloatingDamage(targetToken.id, appliedDamage, dmgType, { isSpell: true });
+
+    if (isDown) {
+      addSkullToToken(targetToken.id);
+      tokenDownEffect(targetToken.id);
+    } else {
+      tokenHitEffect(targetToken.id);
+    }
+
+    logCombat(
+      `<strong class="damage">${appliedDamage}</strong> ${dmgType} → <strong>${name}</strong>: ` +
+      `<strong>${char.hp.current}</strong> → <strong class="${isDown ? "miss" : ""}">${newCurrent}</strong>/${char.hp.max} HP` +
+      (saved ? " (half)" : "") + (isDown ? ` — <strong class="miss">DOWN!</strong>` : ""),
+      "damage"
+    );
+
+    showCombatOverlay(`${spell.name}: ${appliedDamage} ${dmgType}!`,
+      isDown ? `${name} falls to 0 HP!` : `${name}: ${newCurrent}/${char.hp.max} HP${saved ? " (saved, half dmg)" : ""}`);
+    await OBR.notification.show(`${spell.name}: ${appliedDamage} ${dmgType} → ${name}${saved ? " (saved)" : ""}`, isDown ? "ERROR" : "SUCCESS");
+  } else {
+    showCombatOverlay(`${spell.name}: ${saveLabel}!`, saved ? `${name} takes no effect` : `${appliedDamage} ${dmgType} damage`);
+    await OBR.notification.show(`${spell.name}: ${name} ${saveLabel}`, saved ? "WARNING" : "SUCCESS");
+  }
+
+  setTimeout(() => resetCombat(), 3000);
 }
 
 
