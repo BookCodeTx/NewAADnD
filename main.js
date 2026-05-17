@@ -1530,6 +1530,163 @@ document.getElementById("tsave-list")?.addEventListener("click", async (e) => {
 
 document.getElementById("tsave-close")?.addEventListener("click", hideTokenSavePanel);
 
+// ════════════════════════════════════════
+// WILD SHAPE
+// ════════════════════════════════════════
+
+function showWildShapePanel() {
+  if (!currentCharData?.creatures?.length) return;
+  buildWildShapeList();
+  const wsPanel = document.getElementById("wildshape-panel");
+  wsPanel.classList.add("visible");
+  hideOtherPickers("wildshape");
+}
+
+function buildWildShapeList() {
+  const wsList = document.getElementById("ws-list");
+  const revertBtn = document.getElementById("ws-revert-btn");
+  const char = currentCharData;
+  if (!wsList || !char) return;
+
+  wsList.innerHTML = "";
+
+  // Show revert button if currently transformed
+  const isTransformed = !!char._wildShapeOriginal;
+  revertBtn?.classList.toggle("hidden", !isTransformed);
+
+  for (const creature of char.creatures || []) {
+    const card = document.createElement("div");
+    card.className = "ws-card";
+    if (isTransformed && char._wildShapeForm === creature.name) card.classList.add("active");
+
+    const statLine = creature.stats?.map(s => `<span>${s.name} ${s.value}</span>`).join("") || "";
+
+    let actionsHTML = "";
+    if (creature.actions?.length) {
+      actionsHTML = '<div class="ws-card-actions">' +
+        creature.actions.map(a => {
+          const atkStr = a.attackBonus !== null ? ` (+${a.attackBonus})` : "";
+          const dmgStr = a.damage ? ` ${a.damage} ${a.damageType || ""}` : "";
+          return `<div class="ws-card-action"><strong>${a.name}</strong>${atkStr}${dmgStr}</div>`;
+        }).join("") + '</div>';
+    }
+
+    let traitsHTML = "";
+    if (creature.traits?.length) {
+      traitsHTML = creature.traits.map(t =>
+        `<div class="ws-card-action" style="color:#8a8;font-style:italic"><strong>${t.name}:</strong> ${t.description.slice(0, 80)}</div>`
+      ).join("");
+    }
+
+    card.innerHTML = `
+      <div class="ws-card-top">
+        <span class="ws-card-name">${creature.name}</span>
+        <span class="ws-card-size">${creature.size} · ${creature.speedStr || creature.speed + "ft"}</span>
+      </div>
+      <div class="ws-card-stats">
+        <span class="hp">❤️ ${creature.hp}</span>
+        <span class="ac">🛡️ AC ${creature.ac}</span>
+        ${statLine}
+      </div>
+      ${actionsHTML}
+      ${traitsHTML}
+    `;
+
+    card.addEventListener("click", () => wildShapeTransform(creature));
+    wsList.appendChild(card);
+  }
+}
+
+async function wildShapeTransform(creature) {
+  const char = currentCharData;
+  if (!char || !currentTokenId) return;
+
+  // Save original form if not already transformed
+  if (!char._wildShapeOriginal) {
+    char._wildShapeOriginal = {
+      name: char.name,
+      hp: { ...char.hp },
+      ac: char.ac,
+      speed: char.speed,
+      stats: JSON.parse(JSON.stringify(char.stats)),
+      weapons: JSON.parse(JSON.stringify(char.weapons || [])),
+    };
+  }
+
+  // Apply beast form stats
+  char._wildShapeForm = creature.name;
+  char.hp = { current: creature.hp - (creature.removedHitPoints || 0), max: creature.hp, temp: 0 };
+  char.ac = creature.ac;
+  char.speed = creature.speed;
+  // Replace physical stats (STR, DEX, CON) but keep mental stats (INT, WIS, CHA)
+  if (creature.stats?.length === 6) {
+    for (let i = 0; i < 3; i++) { // STR, DEX, CON
+      char.stats[i] = { ...creature.stats[i] };
+    }
+  }
+  // Replace weapons with beast actions
+  char.weapons = (creature.actions || []).map(a => ({
+    name: a.name,
+    equipped: true,
+    type: "Natural Weapon",
+    damage: a.damage || "1d4",
+    damageType: a.damageType || "Slashing",
+    range: "5",
+    properties: [],
+    attackBonus: a.attackBonus ?? null,
+  }));
+
+  // Save to OBR
+  await OBR.scene.items.updateItems([currentTokenId], (items) => {
+    for (const item of items) {
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta) return;
+      meta.character = char;
+      meta.lastUpdated = Date.now();
+    }
+  });
+  char._lastUpdated = Date.now();
+
+  showHotbar(char);
+  buildWildShapeList();
+  logCombat(`🐾 <strong>${char._wildShapeOriginal.name}</strong> transforms into <strong>${creature.name}</strong>! (HP: ${char.hp.current}/${char.hp.max}, AC: ${char.ac})`, "spell");
+  OBR.notification.show(`Wild Shape: ${creature.name}!`, "SUCCESS");
+}
+
+async function wildShapeRevert() {
+  const char = currentCharData;
+  if (!char?._wildShapeOriginal || !currentTokenId) return;
+
+  const orig = char._wildShapeOriginal;
+  const formName = char._wildShapeForm;
+  char.hp = { ...orig.hp };
+  char.ac = orig.ac;
+  char.speed = orig.speed;
+  char.stats = JSON.parse(JSON.stringify(orig.stats));
+  char.weapons = JSON.parse(JSON.stringify(orig.weapons));
+  delete char._wildShapeOriginal;
+  delete char._wildShapeForm;
+
+  // Save to OBR
+  await OBR.scene.items.updateItems([currentTokenId], (items) => {
+    for (const item of items) {
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta) return;
+      meta.character = char;
+      meta.lastUpdated = Date.now();
+    }
+  });
+  char._lastUpdated = Date.now();
+
+  showHotbar(char);
+  buildWildShapeList();
+  logCombat(`↩️ <strong>${char.name}</strong> reverts from <strong>${formName}</strong> form!`, "spell");
+  OBR.notification.show(`Reverted to ${char.name}!`, "SUCCESS");
+}
+
+document.getElementById("ws-revert-btn")?.addEventListener("click", wildShapeRevert);
+document.getElementById("ws-close")?.addEventListener("click", hideWildShapePanel);
+
 // ── Rest handlers ──
 async function performRest(restType) {
   const char = currentCharData;
@@ -1751,6 +1908,7 @@ function hideOtherPickers(except) {
   if (except !== "inventory") inventoryPanel.classList.remove("visible");
   if (except !== "features") featuresPanel.classList.remove("visible");
   if (except !== "token-save") tokenSavePanel.classList.remove("visible");
+  if (except !== "wildshape") document.getElementById("wildshape-panel")?.classList.remove("visible");
 }
 
 // ════════════════════════════════════════
@@ -4079,6 +4237,13 @@ function showHotbar(char) {
     featBtn.style.display = hasFeatures ? "" : "none";
   }
 
+  // Show Wild Shape button if character has creatures (Druid)
+  const wsBtn = document.querySelector('.hotbar-btn.wildshape-btn');
+  if (wsBtn) {
+    const hasCreatures = char.creatures && char.creatures.length > 0;
+    wsBtn.style.display = hasCreatures ? "" : "none";
+  }
+
   // Make HP chip clickable to open editor
   const hpChip = statsBar.querySelector(".stat-chip.hp");
   if (hpChip) {
@@ -4098,7 +4263,8 @@ function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("
 
 function hideInventoryPanel() { inventoryPanel.classList.remove("visible"); }
 function hideTokenSavePanel() { tokenSavePanel.classList.remove("visible"); }
-function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); hideFeaturesPanel(); hideTokenSavePanel(); currentTokenId = null; }
+function hideWildShapePanel() { document.getElementById("wildshape-panel").classList.remove("visible"); }
+function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); hideFeaturesPanel(); hideTokenSavePanel(); hideWildShapePanel(); currentTokenId = null; }
 
 function showLinkPanel(name) {
   linkStatus.textContent = `"${name}" has no character linked.`;
@@ -4162,6 +4328,13 @@ document.querySelectorAll(".hotbar-btn").forEach((btn) => {
     if (action === "token-save") {
       if (tokenSavePanel.classList.contains("visible")) hideTokenSavePanel();
       else showTokenSavePanel();
+      return;
+    }
+
+    if (action === "wildshape") {
+      const wsPanel = document.getElementById("wildshape-panel");
+      if (wsPanel.classList.contains("visible")) hideWildShapePanel();
+      else showWildShapePanel();
       return;
     }
 

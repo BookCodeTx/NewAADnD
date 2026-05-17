@@ -55,6 +55,7 @@ export function parseCharacter(raw) {
     spells,
     features,
     spellSlots,
+    creatures: parseCreatures(d),
   };
 }
 
@@ -977,4 +978,97 @@ function parseSpellSlots(d) {
 
   slots.sort((a, b) => a.level - b.level);
   return slots.filter(s => s.max > 0);
+}
+
+function parseCreatures(d) {
+  const creatures = d.creatures || [];
+  if (creatures.length === 0) return [];
+
+  const SIZE_NAMES = { 1: "Tiny", 2: "Small", 3: "Medium", 4: "Medium", 5: "Large", 6: "Huge", 7: "Gargantuan" };
+  const MOVE_NAMES = { 1: "Walk", 2: "Burrow", 3: "Climb", 4: "Fly", 5: "Swim" };
+  const STAT_NAMES = ["", "STR", "DEX", "CON", "INT", "WIS", "CHA"];
+
+  return creatures.map(c => {
+    const def = c.definition;
+    if (!def) return null;
+
+    // Stats
+    const stats = (def.stats || []).map(s => {
+      const name = STAT_NAMES[s.statId] || "?";
+      const value = s.value || 10;
+      return { name, value, modifier: Math.floor((value - 10) / 2) };
+    });
+
+    // Movements
+    const movements = (def.movements || []).map(m => ({
+      type: MOVE_NAMES[m.movementId] || "Walk",
+      speed: m.speed || 30,
+    }));
+    const mainSpeed = movements.find(m => m.type === "Walk")?.speed || movements[0]?.speed || 30;
+    const speedStr = movements.map(m => m.type === "Walk" ? `${m.speed}ft` : `${m.type} ${m.speed}ft`).join(", ");
+
+    // Parse actions from HTML description
+    const actions = parseCreatureActions(def.actionsDescription || "");
+    const bonusActions = parseCreatureActions(def.bonusActionsDescription || "");
+    const traits = parseCreatureTraits(def.specialTraitsDescription || "");
+
+    return {
+      id: c.id,
+      definitionId: def.id,
+      name: c.name || def.name,
+      isActive: c.isActive || false,
+      removedHitPoints: c.removedHitPoints || 0,
+      size: SIZE_NAMES[def.sizeId] || "Medium",
+      ac: def.armorClass || 10,
+      hp: def.averageHitPoints || 10,
+      hitDice: def.hitPointDice?.diceString || null,
+      speed: mainSpeed,
+      speedStr,
+      stats,
+      actions,
+      bonusActions,
+      traits,
+      avatarUrl: def.avatarUrl || null,
+      groupId: c.groupId,
+    };
+  }).filter(Boolean);
+}
+
+function parseCreatureActions(html) {
+  if (!html) return [];
+  const actions = [];
+  // Match pattern: <strong>Name.</strong> description with attack/damage info
+  const regex = /<strong>([^<]+)\.<\/strong>\s*([^<]*(?:<[^>]*>[^<]*)*)/gi;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    const name = match[1].trim();
+    let desc = match[2].replace(/<[^>]*>/g, "").trim();
+    if (desc.length > 200) desc = desc.slice(0, 200) + "...";
+
+    // Try to extract attack bonus and damage
+    const atkMatch = desc.match(/([+-]\d+)\s*to hit/i);
+    const dmgMatch = desc.match(/(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+(\w+)\s+damage/i);
+
+    actions.push({
+      name,
+      description: desc,
+      attackBonus: atkMatch ? parseInt(atkMatch[1]) : null,
+      damage: dmgMatch ? dmgMatch[1].replace(/\s/g, "") : null,
+      damageType: dmgMatch ? dmgMatch[2] : null,
+    });
+  }
+  return actions;
+}
+
+function parseCreatureTraits(html) {
+  if (!html) return [];
+  const traits = [];
+  const regex = /<strong>([^<]+)\.<\/strong>\s*([^<]*(?:<[^>]*>[^<]*)*)/gi;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    let desc = match[2].replace(/<[^>]*>/g, "").trim();
+    if (desc.length > 200) desc = desc.slice(0, 200) + "...";
+    traits.push({ name: match[1].trim(), description: desc });
+  }
+  return traits;
 }

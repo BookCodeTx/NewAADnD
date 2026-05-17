@@ -280,6 +280,33 @@
     .cond-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #ff66aa44; border-radius: 4px; background: none; color: #ff66aa; font-size: 10px; cursor: pointer; }
     .cond-cancel:hover { background: #ff66aa22; }
 
+    /* ═══ WILD SHAPE PANEL ═══ */
+    #wildshape-panel { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1810, #141008); border: 2px solid #4caf50; border-radius: 10px; margin-top: 6px; max-height: 420px; overflow-y: auto; }
+    #wildshape-panel.visible { display: block; animation: dice-pop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+    #wildshape-panel::-webkit-scrollbar { width: 4px; } #wildshape-panel::-webkit-scrollbar-thumb { background: #4caf5044; border-radius: 2px; }
+    .ws-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .ws-title { font-size: 13px; font-weight: 700; color: #4caf50; text-shadow: 0 0 8px rgba(76,175,80,0.3); }
+    .ws-revert-btn { padding: 4px 10px; border: 1px solid #e94560; border-radius: 4px; background: #e9456022; color: #e94560; font-size: 10px; font-weight: 700; cursor: pointer; }
+    .ws-revert-btn:hover { background: #e94560; color: #fff; }
+    .ws-revert-btn.hidden { display: none; }
+    .ws-list { display: flex; flex-direction: column; gap: 4px; }
+    .ws-card { padding: 8px; background: #0f1a12; border: 1px solid #2a4a2e; border-radius: 8px; cursor: pointer; transition: all 0.15s; }
+    .ws-card:hover { border-color: #4caf50; background: #1a2a1e; }
+    .ws-card.active { border-color: #4caf50; background: #1a3a1e; box-shadow: 0 0 8px rgba(76,175,80,0.3); }
+    .ws-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .ws-card-name { font-size: 12px; font-weight: 700; color: #4caf50; }
+    .ws-card-size { font-size: 9px; color: #6a8a6e; }
+    .ws-card-stats { display: flex; gap: 8px; font-size: 9px; color: #8aaa8e; margin-bottom: 4px; }
+    .ws-card-stats span { padding: 1px 4px; background: #ffffff08; border-radius: 3px; }
+    .ws-card-stats .hp { color: #e94560; } .ws-card-stats .ac { color: #45a0e9; }
+    .ws-card-abilities { display: flex; gap: 4px; font-size: 8px; color: #6a8a6e; margin-bottom: 4px; flex-wrap: wrap; }
+    .ws-card-abilities span { padding: 1px 4px; background: #ffffff06; border-radius: 3px; }
+    .ws-card-actions { font-size: 9px; color: #aaccaa; }
+    .ws-card-action { padding: 2px 0; }
+    .ws-card-action strong { color: #4caf50; }
+    .ws-close { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #4caf5044; border-radius: 4px; background: none; color: #4caf50; font-size: 10px; cursor: pointer; }
+    .ws-close:hover { background: #4caf5022; }
+
     /* ═══ TOKEN SAVE/LOAD PANEL ═══ */
     #token-save-panel { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #101a18, #0a1410); border: 2px solid #45e9a0; border-radius: 10px; margin-top: 6px; max-height: 420px; overflow-y: auto; }
     #token-save-panel.visible { display: block; animation: dice-pop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
@@ -657,6 +684,7 @@
       <button class="hotbar-btn conditions-btn" data-action="conditions"><span class="icon">🏷️</span><span class="label">Status</span></button>
       <button class="hotbar-btn features-btn" data-action="features" style="border-bottom: 3px solid #e97045;"><span class="icon">📜</span><span class="label">Traits</span></button>
       <button class="hotbar-btn inventory-btn" data-action="inventory" style="border-bottom: 3px solid #e9c645;"><span class="icon">🎒</span><span class="label">Bag</span></button>
+      <button class="hotbar-btn wildshape-btn" data-action="wildshape" style="border-bottom: 3px solid #4caf50; display:none;"><span class="icon">🐾</span><span class="label">Shape</span></button>
       <button class="hotbar-btn rest" data-action="rest"><span class="icon">💤</span><span class="label">Rest</span></button>
       <button class="hotbar-btn token-save-btn" data-action="token-save" style="border-bottom: 3px solid #45e9a0;"><span class="icon">💾</span><span class="label">Save</span></button>
       <button class="hotbar-btn refresh" id="refresh-btn"><span class="icon">🔄</span><span class="label">Sync</span></button>
@@ -720,6 +748,16 @@
         <button class="damage-roll-btn" id="damage-roll-btn">🎲 Roll Damage</button>
       </div>
       <button class="damage-cancel" id="damage-roll-cancel">Cancel</button>
+    </div>
+
+    <!-- Wild Shape Picker -->
+    <div id="wildshape-panel">
+      <div class="ws-header">
+        <div class="ws-title">🐾 Wild Shape</div>
+        <button class="ws-revert-btn hidden" id="ws-revert-btn">↩️ Revert</button>
+      </div>
+      <div class="ws-list" id="ws-list"></div>
+      <button class="ws-close" id="ws-close">Close</button>
     </div>
 
     <!-- Spell Picker -->
