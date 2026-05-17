@@ -31,6 +31,9 @@ export function parseCharacter(raw) {
     pp: currencies.pp || 0,
   };
 
+  // Spell slots
+  const spellSlots = parseSpellSlots(d);
+
   return {
     id: d.id,
     name: d.name,
@@ -51,6 +54,7 @@ export function parseCharacter(raw) {
     currency,
     spells,
     features,
+    spellSlots,
   };
 }
 
@@ -909,4 +913,68 @@ function parseSpells(d, stats, profBonus) {
   });
 
   return spellList;
+}
+
+function parseSpellSlots(d) {
+  const slots = [];
+
+  // Regular spell slots (from classSpells)
+  for (const cs of d.classSpells || []) {
+    const slotArr = cs.spellSlots || [];
+    for (let i = 0; i < slotArr.length; i++) {
+      const slot = slotArr[i];
+      if (!slot || slot.level === 0) continue;
+      const existing = slots.find(s => s.level === slot.level);
+      if (existing) {
+        existing.max += (slot.available || 0);
+        existing.used += (slot.used || 0);
+      } else {
+        slots.push({
+          level: slot.level,
+          max: slot.available || 0,
+          used: slot.used || 0,
+          remaining: (slot.available || 0) - (slot.used || 0),
+        });
+      }
+    }
+  }
+
+  // Pact magic slots (Warlock)
+  if (d.pactMagic) {
+    const pactSlots = d.pactMagic.spellSlots || [];
+    for (const slot of pactSlots) {
+      if (!slot || slot.level === 0) continue;
+      const existing = slots.find(s => s.level === slot.level);
+      if (existing) {
+        existing.max += (slot.available || 0);
+        existing.used += (slot.used || 0);
+        existing.remaining = existing.max - existing.used;
+        existing.isPact = true;
+      } else {
+        slots.push({
+          level: slot.level,
+          max: slot.available || 0,
+          used: slot.used || 0,
+          remaining: (slot.available || 0) - (slot.used || 0),
+          isPact: true,
+        });
+      }
+    }
+  }
+
+  // If no class data, try top-level spellSlots
+  if (slots.length === 0 && d.spellSlots) {
+    for (const slot of d.spellSlots) {
+      if (!slot || slot.level === 0 || !slot.available) continue;
+      slots.push({
+        level: slot.level,
+        max: slot.available || 0,
+        used: slot.used || 0,
+        remaining: (slot.available || 0) - (slot.used || 0),
+      });
+    }
+  }
+
+  slots.sort((a, b) => a.level - b.level);
+  return slots.filter(s => s.max > 0);
 }

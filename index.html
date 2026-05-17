@@ -250,6 +250,14 @@
     .spell-level-tab { font-size: 9px; padding: 2px 8px; border-radius: 4px; cursor: pointer; color: #7766aa; background: #0f1028; border: 1px solid #2a1a4e; transition: all 0.15s; }
     .spell-level-tab:hover { border-color: #a045e9; color: #d0b0f0; }
     .spell-level-tab.active { background: #a045e944; border-color: #a045e9; color: #fff; }
+    .spell-slots-row { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; padding: 6px 4px; background: #0f1028; border-radius: 6px; margin-bottom: 4px; border: 1px solid #2a1a4e; }
+    .spell-slot-group { display: flex; align-items: center; gap: 4px; font-size: 9px; }
+    .slot-label { color: #a088cc; font-weight: 600; min-width: 28px; }
+    .slot-pips { display: flex; gap: 2px; }
+    .slot-pip { width: 8px; height: 8px; border-radius: 50%; border: 1px solid #a045e966; }
+    .slot-pip.filled { background: #a045e9; box-shadow: 0 0 4px #a045e966; }
+    .slot-pip.empty { background: #1a1030; }
+    .slot-count { color: #776699; font-size: 8px; }
     .spell-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #a045e944; border-radius: 4px; background: none; color: #a045e9; font-size: 10px; cursor: pointer; }
     .spell-cancel:hover { background: #a045e922; }
 
@@ -406,6 +414,8 @@
     .feat-use-pip { width: 10px; height: 10px; border-radius: 50%; border: 1px solid #e97045; background: transparent; transition: all 0.2s; }
     .feat-use-pip.filled { background: #e97045; box-shadow: 0 0 4px #e9704566; }
     .feat-use-pip.empty { background: #1a0a04; opacity: 0.4; }
+    .feat-dice-btn { padding: 2px 6px; border-radius: 4px; border: 1px solid #a045e944; background: #a045e911; color: #a045e9; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+    .feat-dice-btn:hover { background: #a045e933; border-color: #a045e9; }
     .feat-use-btn { padding: 2px 8px; border-radius: 4px; border: 1px solid #e97045; background: #e9704522; color: #e97045; font-size: 9px; font-weight: 700; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
     .feat-use-btn:hover { background: #e97045; color: #fff; }
     .feat-use-btn:disabled { opacity: 0.3; cursor: not-allowed; }

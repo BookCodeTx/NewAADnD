@@ -239,6 +239,28 @@ function buildSpellGrid() {
     });
     spellGrid.appendChild(tabBar);
 
+    // Spell Slots display
+    const spellSlots = currentCharData?.spellSlots || [];
+    if (spellSlots.length > 0) {
+      const slotsRow = document.createElement("div");
+      slotsRow.className = "spell-slots-row";
+      for (const slot of spellSlots) {
+        const pips = [];
+        for (let i = 0; i < slot.max; i++) {
+          pips.push(`<span class="slot-pip ${i < slot.remaining ? "filled" : "empty"}"></span>`);
+        }
+        const pactLabel = slot.isPact ? " (Pact)" : "";
+        slotsRow.innerHTML += `
+          <div class="spell-slot-group" data-slot-level="${slot.level}">
+            <span class="slot-label">Lv.${slot.level}${pactLabel}</span>
+            <span class="slot-pips">${pips.join("")}</span>
+            <span class="slot-count">${slot.remaining}/${slot.max}</span>
+          </div>
+        `;
+      }
+      spellGrid.appendChild(slotsRow);
+    }
+
     // Filter
     let filtered = charSpells;
     if (currentSpellFilter === "cantrip") filtered = charSpells.filter(s => s.level === 0);
@@ -284,9 +306,34 @@ function buildSpellGrid() {
         card.title = "Non-combat spell";
       }
 
-      card.addEventListener("click", () => {
+      card.addEventListener("click", async () => {
         if (!isCombat) {
+          // Expend slot for non-cantrip non-combat spells
+          if (spell.level > 0 && currentCharData?.spellSlots) {
+            const slot = currentCharData.spellSlots.find(s => s.level === spell.level && s.remaining > 0);
+            if (slot) {
+              slot.remaining--;
+              slot.used++;
+              await OBR.scene.items.updateItems([currentTokenId], (items) => {
+                for (const item of items) {
+                  const meta = item.metadata[METADATA_KEY];
+                  if (!meta?.character?.spellSlots) return;
+                  const s = meta.character.spellSlots.find(sl => sl.level === spell.level);
+                  if (s) { s.remaining = slot.remaining; s.used = slot.used; }
+                  meta.lastUpdated = Date.now();
+                }
+              });
+              currentCharData._lastUpdated = Date.now();
+              logCombat(`🔮 Lv.${spell.level} spell slot expended (${slot.remaining}/${slot.max} remaining)`, "spell");
+            }
+          }
           logCombat(`<strong>${currentCharData?.name}</strong> casts <strong>${spell.name}</strong>`, "spell");
+          // Roll healing/damage dice if available
+          if (spell.damage && currentCharData) {
+            await rollDice(spell.damage, `${currentCharData.name} ${spell.name} (${spell.damageType || "damage"})`, 0);
+          } else if (spell.healing && currentCharData) {
+            await rollDice(spell.healing, `${currentCharData.name} ${spell.name} (Healing)`, 0);
+          }
           hideSpellPicker();
           resetCombat();
           return;
@@ -331,9 +378,32 @@ spellCancel.addEventListener("click", () => {
   resetCombat();
 });
 
-function onSpellSelected(key, spell) {
+async function onSpellSelected(key, spell) {
   selectedSpell = { key, ...spell };
   hideSpellPicker();
+
+  // Expend spell slot if not a cantrip
+  if (spell.level > 0 && currentCharData?.spellSlots) {
+    const slot = currentCharData.spellSlots.find(s => s.level === spell.level && s.remaining > 0);
+    if (slot) {
+      slot.remaining--;
+      slot.used++;
+      // Save to OBR
+      await OBR.scene.items.updateItems([currentTokenId], (items) => {
+        for (const item of items) {
+          const meta = item.metadata[METADATA_KEY];
+          if (!meta?.character?.spellSlots) return;
+          const s = meta.character.spellSlots.find(sl => sl.level === spell.level);
+          if (s) { s.remaining = slot.remaining; s.used = slot.used; }
+          meta.lastUpdated = Date.now();
+        }
+      });
+      currentCharData._lastUpdated = Date.now();
+      logCombat(`🔮 Lv.${spell.level} spell slot expended (${slot.remaining}/${slot.max} remaining)`, "spell");
+    } else {
+      logCombat(`⚠️ No Lv.${spell.level} spell slots remaining!`, "info");
+    }
+  }
 
   attackerData = { ...currentCharData };
   attackerTokenId = currentTokenId;
@@ -1044,6 +1114,12 @@ function buildFeaturesList() {
       }
     }
 
+    // Dice roll button (for features with dice like Sneak Attack 1d6)
+    let diceBtn = "";
+    if (feat.dice) {
+      diceBtn = `<button class="feat-dice-btn" data-dice="${feat.dice}" data-feat-name="${feat.name}" title="Roll ${feat.dice}">🎲</button>`;
+    }
+
     // Use button — show for any feature with limited uses OR an activation type
     let btnHTML = "";
     if (feat.maxUses !== null) {
@@ -1062,6 +1138,7 @@ function buildFeaturesList() {
         <div class="feat-item-tags">${tags.join("")}</div>
         <div style="display:flex;align-items:center;gap:4px">
           ${usesHTML}
+          ${diceBtn}
           ${btnHTML}
         </div>
       </div>
@@ -1084,8 +1161,20 @@ document.getElementById("feat-tabs")?.addEventListener("click", (e) => {
   buildFeaturesList();
 });
 
-// Use button clicks — delegate from feat-list
+// Dice roll button on features (e.g. Sneak Attack 1d6)
 featList?.addEventListener("click", async (e) => {
+  const diceBtn = e.target.closest(".feat-dice-btn");
+  if (diceBtn) {
+    e.stopPropagation();
+    const dice = diceBtn.dataset.dice;
+    const featName = diceBtn.dataset.featName;
+    if (dice && currentCharData) {
+      await rollDice(dice, `${currentCharData.name} ${featName}`, 0);
+    }
+    return;
+  }
+
+  // Use button clicks — delegate from feat-list
   const btn = e.target.closest(".feat-use-btn");
   if (!btn || btn.disabled) return;
 
@@ -1453,7 +1542,7 @@ async function performRest(restType) {
     : ["Short Rest"];                       // Short rest only resets short rest features
 
   let resetCount = 0;
-  for (const feat of char.features) {
+  for (const feat of char.features || []) {
     if (feat.maxUses === null || feat.remaining === feat.maxUses) continue;
     if (!feat.resetType || !matchTypes.includes(feat.resetType)) continue;
     feat.remaining = feat.maxUses;
@@ -1461,7 +1550,21 @@ async function performRest(restType) {
     resetCount++;
   }
 
-  if (resetCount === 0) {
+  // Restore spell slots
+  let slotsRestored = 0;
+  if (char.spellSlots) {
+    for (const slot of char.spellSlots) {
+      if (slot.remaining === slot.max) continue;
+      // Long rest: all slots. Short rest: only pact magic
+      if (isLong || slot.isPact) {
+        slotsRestored += (slot.max - slot.remaining);
+        slot.remaining = slot.max;
+        slot.used = 0;
+      }
+    }
+  }
+
+  if (resetCount === 0 && slotsRestored === 0) {
     OBR.notification.show(`${char.name}: Nothing to reset on ${label}`, "INFO");
     return;
   }
@@ -1470,12 +1573,17 @@ async function performRest(restType) {
   await OBR.scene.items.updateItems([currentTokenId], (items) => {
     for (const item of items) {
       const meta = item.metadata[METADATA_KEY];
-      if (!meta?.character?.features) return;
-      for (const feat of meta.character.features) {
+      if (!meta?.character) return;
+      for (const feat of meta.character.features || []) {
         if (feat.maxUses === null) continue;
         if (!feat.resetType || !matchTypes.includes(feat.resetType)) continue;
         feat.remaining = feat.maxUses;
         feat.usedCount = 0;
+      }
+      if (meta.character.spellSlots) {
+        for (const slot of meta.character.spellSlots) {
+          if (isLong || slot.isPact) { slot.remaining = slot.max; slot.used = 0; }
+        }
       }
       meta.lastUpdated = Date.now();
     }
@@ -1506,8 +1614,9 @@ async function performRest(restType) {
 
   buildFeaturesList();
   const icon = isLong ? "🌙" : "⏱️";
-  logCombat(`${icon} <strong>${char.name}</strong> takes a <strong>${label}</strong> — ${resetCount} feature(s) restored!`, "info");
-  OBR.notification.show(`${char.name}: ${label} — ${resetCount} feature(s) restored!`, "SUCCESS");
+  const slotStr = slotsRestored > 0 ? `, ${slotsRestored} spell slot(s)` : "";
+  logCombat(`${icon} <strong>${char.name}</strong> takes a <strong>${label}</strong> — ${resetCount} feature(s)${slotStr} restored!`, "info");
+  OBR.notification.show(`${char.name}: ${label} — ${resetCount} feature(s)${slotStr} restored!`, "SUCCESS");
 }
 
 document.getElementById("feat-short-rest")?.addEventListener("click", () => performRest("short"));
