@@ -3865,9 +3865,13 @@ async function resolveAttackRoll(result) {
   attackRollResult = { natValue };
   combatState = COMBAT.ROLLING_DAMAGE;
 
-  // Show damage roll panel for player to roll
-  const hitLabel = isCrit ? `CRIT! → ${targetName}` : `HIT! → ${targetName}`;
-  showDamageRollPanel(hitLabel, isCrit);
+  // Auto-roll damage dice immediately after hit
+  if (selectedWeapon && selectedWeapon.damage) {
+    await rollDamageDice(isCrit, targetName);
+  } else {
+    // Fallback to manual only if no weapon data
+    showDamageInput("Enter Damage");
+  }
 }
 
 // ── Damage Roll Panel (player clicks to roll) ──
