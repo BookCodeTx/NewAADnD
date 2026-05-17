@@ -453,8 +453,10 @@ function buildWeaponGrid() {
   for (const weapon of list) {
     const card = document.createElement("div");
     card.className = "action-card";
-    const atkSign = weapon.attackBonus >= 0 ? "+" : "";
-    const dmgSign = weapon.damageMod >= 0 ? "+" : "";
+    const atkBonus = weapon.attackBonus ?? 0;
+    const dmgMod = weapon.damageMod ?? 0;
+    const atkSign = atkBonus >= 0 ? "+" : "";
+    const dmgStr = dmgMod !== 0 ? `${dmgMod >= 0 ? "+" : ""}${dmgMod}` : "";
     const props = (weapon.properties || []).join(", ");
     const masteryTags = (weapon.mastery || []).map(m => `<span class="mastery-tag">${m}</span>`).join("");
     card.innerHTML = `
@@ -463,8 +465,8 @@ function buildWeaponGrid() {
         <div class="action-type">${weapon.type}${props ? " · " + props : ""}</div>
       </div>
       <div class="action-card-right">
-        <span class="action-hit">${atkSign}${weapon.attackBonus}</span>
-        <span class="action-dmg">${weapon.damage}${dmgSign}${weapon.damageMod} ${weapon.damageType || ""}</span>
+        <span class="action-hit">${atkSign}${atkBonus}</span>
+        <span class="action-dmg">${weapon.damage}${dmgStr} ${weapon.damageType || ""}</span>
       </div>
     `;
     card.addEventListener("click", () => onWeaponSelected(weapon));
@@ -487,7 +489,8 @@ function onWeaponSelected(weapon) {
   attackerTokenId = currentTokenId;
   document.querySelector(".hotbar-btn.attack")?.classList.add("active-action");
   showCombatOverlay(`${attackerData.name}: ${weapon.name}`, "Click on an enemy token...");
-  logCombat(`<strong>${attackerData.name}</strong> readies <strong>${weapon.name}</strong> (${weapon.attackBonus >= 0 ? "+" : ""}${weapon.attackBonus} to hit)`, "info");
+  const wb = weapon.attackBonus ?? 0;
+  logCombat(`<strong>${attackerData.name}</strong> readies <strong>${weapon.name}</strong> (${wb >= 0 ? "+" : ""}${wb} to hit)`, "info");
 }
 
 actionCancel.addEventListener("click", () => { hideActionPicker(); resetCombat(); });
@@ -1631,9 +1634,12 @@ async function wildShapeTransform(creature) {
     type: "Natural Weapon",
     damage: a.damage || "1d4",
     damageType: a.damageType || "Slashing",
+    damageMod: 0,
     range: "5",
     properties: [],
-    attackBonus: a.attackBonus ?? null,
+    mastery: [],
+    attackBonus: a.attackBonus ?? 0,
+    attackType: "melee",
   }));
 
   // Save to OBR
@@ -2816,11 +2822,14 @@ function normalizeMonster(m) {
     name: a.name || "Attack",
     equipped: true,
     type: a.type || "Simple Melee",
+    attackType: a.type?.toLowerCase().includes("ranged") ? "ranged" : "melee",
     damage: a.damage || "1d4",
     damageType: a.damageType || "Slashing",
+    damageMod: a.damageMod ?? 0,
     range: a.range || "5",
     properties: a.properties || [],
-    attackBonus: a.attackBonus ?? null,
+    mastery: [],
+    attackBonus: a.attackBonus ?? 0,
   }));
 
   const totalLevel = m.cr ? Math.max(1, Math.round(m.cr)) : 1;
