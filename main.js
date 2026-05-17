@@ -289,13 +289,25 @@ function buildSpellGrid() {
       if (spell.save) tags.push(`<span class="spell-tag save">${spell.save} Save</span>`);
       if (spell.isAttack) tags.push(`<span class="spell-tag atk">Attack +${spell.attackBonus}</span>`);
       if (spell.damage) tags.push(`<span class="spell-tag dmg">${spell.damage} ${spell.damageType || ""}</span>`);
-      if (spell.isHealing) tags.push(`<span class="spell-tag heal">Heal</span>`);
+      if (spell.healing) {
+        const healMod = spell.healingMod ? `+${spell.healingMod}` : "";
+        tags.push(`<span class="spell-tag heal">${spell.healing}${healMod} ❤️</span>`);
+      } else if (spell.isHealing) tags.push(`<span class="spell-tag heal">Heal</span>`);
       if (spell.concentration) tags.push(`<span class="spell-tag conc">Conc.</span>`);
       if (spell.ritual) tags.push(`<span class="spell-tag ritual">Ritual</span>`);
 
       const lvStr = spell.level === 0 ? "Cantrip" : `Lv.${spell.level}`;
+      // Show slot info for leveled spells
+      let slotInfo = "";
+      if (spell.level > 0 && currentCharData?.spellSlots) {
+        const slot = currentCharData.spellSlots.find(s => s.level === spell.level);
+        if (slot) {
+          const noSlots = slot.remaining <= 0;
+          slotInfo = `<span class="spell-slot-info${noSlots ? " no-slots" : ""}">${slot.remaining}/${slot.max}</span>`;
+        }
+      }
       card.innerHTML = `
-        <div class="spell-name">${spell.name}</div>
+        <div class="spell-name">${spell.name}${slotInfo}</div>
         <div class="spell-info">${lvStr} — ${spell.description}</div>
         <div class="spell-tags">${tags.join("")}</div>
       `;
@@ -333,7 +345,7 @@ function buildSpellGrid() {
           if (spell.damage && currentCharData) {
             await rollDice(spell.damage, `${currentCharData.name} ${spell.name} (${spell.damageType || "damage"})`, 0);
           } else if (spell.healing && currentCharData) {
-            await rollDice(spell.healing, `${currentCharData.name} ${spell.name} (Healing)`, 0);
+            await rollDice(spell.healing, `${currentCharData.name} ${spell.name} (Healing)`, spell.healingMod || 0);
           }
           hideSpellPicker();
           resetCombat();

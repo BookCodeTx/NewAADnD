@@ -233,7 +233,9 @@
     .spell-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; max-height: 320px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #a045e944 transparent; }
     .spell-card { padding: 6px 8px; background: #0f1028; border: 1px solid #2a1a4e; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
     .spell-card:hover { border-color: #a045e9; background: #1a1038; }
-    .spell-card .spell-name { font-size: 11px; font-weight: 700; color: #d0b0f0; }
+    .spell-card .spell-name { font-size: 11px; font-weight: 700; color: #d0b0f0; display: flex; align-items: center; justify-content: space-between; }
+    .spell-slot-info { font-size: 8px; font-weight: 600; color: #a088cc; background: #1a1040; padding: 1px 5px; border-radius: 3px; border: 1px solid #2a1a4e; }
+    .spell-slot-info.no-slots { color: #ff4444; border-color: #442222; background: #1a0808; }
     .spell-card .spell-info { font-size: 8px; color: #7766aa; margin-top: 2px; }
     .spell-card .spell-tags { display: flex; gap: 3px; margin-top: 3px; }
     .spell-tag { font-size: 7px; padding: 1px 4px; border-radius: 3px; }

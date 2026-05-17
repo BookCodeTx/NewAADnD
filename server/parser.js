@@ -813,17 +813,20 @@ function parseSpells(d, stats, profBonus) {
   const spellAttackBonus = profBonus + castMod;
 
   // Gather spells from classSpells, race spells, feat spells, etc.
-  const allSpellSources = [
-    ...(d.classSpells || []),
-    ...(d.spells?.race || []),
-    ...(d.spells?.feat || []),
-    ...(d.spells?.item || []),
-    ...(d.spells?.class || []),
+  // Feature-granted spells (from d.spells.*) are always available
+  const classSpellSources = (d.classSpells || []).map(src => ({ ...src, _featureGranted: false }));
+  const featureSpells = [
+    ...(d.spells?.race || []).map(s => ({ _single: s, _featureGranted: true })),
+    ...(d.spells?.feat || []).map(s => ({ _single: s, _featureGranted: true })),
+    ...(d.spells?.item || []).map(s => ({ _single: s, _featureGranted: true })),
+    ...(d.spells?.class || []).map(s => ({ _single: s, _featureGranted: true })),
   ];
+  const allSpellSources = [...classSpellSources, ...featureSpells];
 
   for (const source of allSpellSources) {
-    // classSpells has .spells array; race/feat/item spells are direct arrays
-    const spells = source.spells || (Array.isArray(source) ? source : [source]);
+    const isFeatureGranted = source._featureGranted || false;
+    // classSpells has .spells array; feature spells are single objects
+    const spells = source._single ? [source._single] : (source.spells || (Array.isArray(source) ? source : [source]));
     for (const spell of spells) {
       const def = spell.definition || spell;
       if (!def || !def.name) continue;
@@ -848,6 +851,7 @@ function parseSpells(d, stats, profBonus) {
       let damage = null;
       let damageType = null;
       let isHealing = false;
+      const damageParts = [];
 
       // Check modifiers for damage dice
       const modifiers = def.modifiers || [];
@@ -855,14 +859,21 @@ function parseSpells(d, stats, profBonus) {
         if (mod.type === "damage" && mod.die) {
           const die = mod.die;
           if (die.diceString) {
-            damage = die.diceString;
-            damageType = mod.subType || mod.friendlySubtypeName || null;
+            damageParts.push(die.diceString);
+            if (!damageType) damageType = mod.subType || mod.friendlySubtypeName || null;
           }
         }
         if (mod.type === "bonus" && mod.subType === "hit-points") {
           isHealing = true;
           if (mod.die?.diceString) damage = mod.die.diceString;
         }
+      }
+
+      // Combine multiple DIFFERENT damage dice (e.g. Ice Knife: 1d10 + 2d6)
+      // If all dice are the same (e.g. Shillelagh 1d8/1d8), just use one
+      if (damageParts.length > 0 && !damage) {
+        const unique = [...new Set(damageParts)];
+        damage = unique.join("+");
       }
 
       // Fallback: check atHigherLevels for damage scaling hint
@@ -916,13 +927,18 @@ function parseSpells(d, stats, profBonus) {
       // Determine color
       const color = DAMAGE_TYPE_COLORS[damageType] || "#aa88ff";
 
+      // For healing spells, store healing dice separately
+      const healing = isHealing ? (damage || null) : null;
+
       const parsed = {
         key: spellKey,
         name: def.name,
         level,
         school,
-        damage: damage || null,
+        damage: isHealing ? null : (damage || null),
         damageType: damageType || null,
+        healing,
+        healingMod: isHealing ? castMod : 0,
         save: saveType,
         isAoE,
         aoeRadius,
@@ -936,7 +952,7 @@ function parseSpells(d, stats, profBonus) {
         color,
         description: descParts.join(", "),
         activationType,
-        prepared: spell.prepared ?? spell.alwaysPrepared ?? true,
+        prepared: spell.prepared || spell.alwaysPrepared || isFeatureGranted || false,
         spellDC,
       };
 
