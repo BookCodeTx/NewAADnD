@@ -4110,11 +4110,73 @@ const damageRollPanel = document.getElementById("damage-roll-panel");
 const damageRollTitle = document.getElementById("damage-roll-title");
 const damageRollInfo = document.getElementById("damage-roll-info");
 const damageRollBtn = document.getElementById("damage-roll-btn");
+const smiteRow = document.getElementById("smite-row");
+const smiteToggle = document.getElementById("smite-toggle");
+const smiteSlotSelect = document.getElementById("smite-slot-select");
 let pendingDamageCrit = false;
+let smiteActive = false;
+
+smiteToggle.addEventListener("click", () => {
+  smiteActive = !smiteActive;
+  smiteToggle.classList.toggle("active", smiteActive);
+  smiteSlotSelect.style.display = smiteActive ? "inline-block" : "none";
+  updateDamageRollBtnText();
+});
+
+smiteSlotSelect.addEventListener("change", () => updateDamageRollBtnText());
+
+function getSmiteDice() {
+  if (!smiteActive) return null;
+  const slotLevel = parseInt(smiteSlotSelect.value) || 1;
+  // Divine Smite: 2d8 at Lv1, +1d8 per level above 1
+  const numDice = 1 + slotLevel;
+  return { dice: `${numDice}d8`, slotLevel, type: "Radiant" };
+}
+
+function updateDamageRollBtnText() {
+  if (!selectedWeapon?.damage) return;
+  const baseDice = selectedWeapon.damage;
+  const mod = selectedWeapon.damageMod || 0;
+  const modStr = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : "";
+  let notation = baseDice;
+  if (pendingDamageCrit) {
+    notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
+  }
+  const smite = getSmiteDice();
+  if (smite) {
+    let smiteDice = smite.dice;
+    if (pendingDamageCrit) {
+      smiteDice = smiteDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
+    }
+    damageRollBtn.textContent = `🎲 Roll ${notation}+${smiteDice}${modStr}`;
+    damageRollInfo.textContent = `${selectedWeapon.name}: ${notation}${modStr} ${selectedWeapon.damageType || ""} + ⚡${smiteDice} Radiant${pendingDamageCrit ? " (CRIT)" : ""}`;
+  } else {
+    const dmgType = selectedWeapon.damageType || "";
+    damageRollBtn.textContent = `🎲 Roll ${notation}${modStr}`;
+    damageRollInfo.textContent = `${selectedWeapon.name}: ${notation}${modStr} ${dmgType}${pendingDamageCrit ? " (CRIT x2 dice)" : ""}`;
+  }
+}
 
 function showDamageRollPanel(title, isCrit) {
   pendingDamageCrit = isCrit;
+  smiteActive = false;
+  smiteToggle.classList.remove("active");
+  smiteSlotSelect.style.display = "none";
   damageRollTitle.textContent = title || "Roll Damage";
+
+  // Check if character has Divine Smite + melee attack + available spell slots
+  const hasSmite = currentCharData?.spells?.some(s => s.name === "Divine Smite" && s.prepared);
+  const isMelee = combatAction === "attack" && (selectedWeapon?.attackType === "melee" || !selectedWeapon?.attackType);
+  const availableSlots = (currentCharData?.spellSlots || []).filter(s => s.remaining > 0);
+
+  if (hasSmite && isMelee && availableSlots.length > 0) {
+    smiteRow.classList.remove("hidden");
+    smiteSlotSelect.innerHTML = availableSlots.map(s =>
+      `<option value="${s.level}">Lv.${s.level} (${s.remaining}/${s.max})</option>`
+    ).join("");
+  } else {
+    smiteRow.classList.add("hidden");
+  }
 
   if (selectedWeapon && selectedWeapon.damage) {
     const baseDice = selectedWeapon.damage;
@@ -4138,14 +4200,34 @@ function showDamageRollPanel(title, isCrit) {
 function hideDamageRollPanel() { damageRollPanel.classList.remove("visible"); }
 
 damageRollBtn.addEventListener("click", async () => {
+  const smite = getSmiteDice();
   hideDamageRollPanel();
   if (!selectedWeapon || !selectedWeapon.damage) {
-    // No weapon data — roll 1d4 as fallback
     selectedWeapon = selectedWeapon || { name: "Attack", damage: "1d4", damageMod: 0, damageType: "damage", attackType: "melee", properties: [], mastery: [] };
     if (!selectedWeapon.damage) selectedWeapon.damage = "1d4";
   }
+
+  // If smite active, consume spell slot and add smite dice
+  if (smite && currentCharData?.spellSlots) {
+    const slot = currentCharData.spellSlots.find(s => s.level === smite.slotLevel && s.remaining > 0);
+    if (slot) {
+      slot.remaining--;
+      slot.used++;
+      await OBR.scene.items.updateItems([currentTokenId], (items) => {
+        for (const item of items) {
+          const meta = item.metadata[METADATA_KEY];
+          if (!meta?.character?.spellSlots) return;
+          const s = meta.character.spellSlots.find(sl => sl.level === smite.slotLevel);
+          if (s) { s.remaining = slot.remaining; s.used = slot.used; }
+          meta.lastUpdated = Date.now();
+        }
+      });
+      logCombat(`⚡ <strong>Divine Smite</strong> (Lv.${smite.slotLevel} slot) — +${smite.dice} Radiant (${slot.remaining}/${slot.max} slots left)`, "spell");
+    }
+  }
+
   const targetName = targetData?.name || "Target";
-  await rollDamageDice(pendingDamageCrit, targetName);
+  await rollDamageDice(pendingDamageCrit, targetName, smite);
 });
 
 document.getElementById("damage-roll-cancel").addEventListener("click", () => {
@@ -4153,7 +4235,7 @@ document.getElementById("damage-roll-cancel").addEventListener("click", () => {
   resetCombat();
 });
 
-async function rollDamageDice(isCrit, targetName) {
+async function rollDamageDice(isCrit, targetName, smite = null) {
   const weapon = selectedWeapon;
   const baseDice = weapon.damage || "1d4";
   const damageMod = weapon.damageMod || 0;
@@ -4167,6 +4249,13 @@ async function rollDamageDice(isCrit, targetName) {
   let notation = baseDice;
   if (isCrit && hasDice) {
     notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
+  }
+
+  // Add Divine Smite dice
+  if (smite) {
+    let smiteDice = smite.dice;
+    if (isCrit) smiteDice = smiteDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
+    notation = hasDice ? `${notation}+${smiteDice}` : smiteDice;
   }
 
   let diceTotal, individualResults;

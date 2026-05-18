@@ -222,6 +222,13 @@
     #damage-roll-panel.visible { display: block; animation: dice-pop 0.3s cubic-bezier(0.34,1.56,0.64,1); }
     .damage-roll-info { color: #ffcc80; font-size: 13px; font-weight: 700; margin: 6px 0 10px; }
     .damage-roll-actions { display: flex; gap: 6px; justify-content: center; margin-bottom: 6px; }
+    .smite-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 10px; }
+    .smite-row.hidden { display: none; }
+    .smite-toggle { padding: 6px 14px; background: #1a1030; border: 2px solid #ffd70066; border-radius: 6px; color: #ffd700; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+    .smite-toggle:hover { border-color: #ffd700; background: #2a1840; }
+    .smite-toggle.active { background: linear-gradient(180deg, #3a2800, #2a1800); border-color: #ffd700; box-shadow: 0 0 12px rgba(255,215,0,0.4); color: #fff; }
+    .smite-slot-select { padding: 4px 8px; background: #0a0a14; border: 1px solid #ffd70044; border-radius: 4px; color: #ffd700; font-size: 11px; display: none; }
+    .smite-toggle.active ~ .smite-slot-select { display: inline-block; }
     .damage-roll-btn { padding: 12px 28px; background: linear-gradient(180deg, #e94560, #c03050); border: 2px solid #ff6080; border-radius: 8px; color: #fff; font-size: 16px; font-weight: 800; cursor: pointer; transition: all 0.15s; text-transform: uppercase; letter-spacing: 1px; }
     .damage-roll-btn:hover { background: linear-gradient(180deg, #ff5070, #e94560); border-color: #ffd700; box-shadow: 0 0 16px rgba(255,215,0,0.4); transform: scale(1.05); }
     .damage-roll-btn:active { transform: scale(0.95); }
@@ -754,6 +761,10 @@
     <div id="damage-roll-panel">
       <div class="damage-input-title" id="damage-roll-title">Roll Damage</div>
       <div class="damage-roll-info" id="damage-roll-info"></div>
+      <div id="smite-row" class="smite-row hidden">
+        <button id="smite-toggle" class="smite-toggle">⚡ Divine Smite</button>
+        <select id="smite-slot-select" class="smite-slot-select"></select>
+      </div>
       <div class="damage-roll-actions">
         <button class="damage-roll-btn" id="damage-roll-btn">🎲 Roll Damage</button>
       </div>
