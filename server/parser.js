@@ -481,6 +481,21 @@ function parseWeapons(d, stats, profBonus) {
     const atkName = ATTACK_TYPE_NAMES[def.attackType] || "Melee";
     const weaponType = catName ? `${catName} ${atkName}` : `${def.type} ${atkName}`;
 
+    // Deduplicate: skip if same weapon name already added (prefer equipped)
+    const existing = weapons.find(w => w.name === def.name);
+    if (existing) {
+      // If new one is equipped and old one isn't, replace it
+      if ((item.equipped || false) && !existing.equipped) {
+        Object.assign(existing, {
+          equipped: true, type: weaponType, attackType: isRanged ? "ranged" : "melee",
+          damage: damage ? damage.diceString : "1", damageType, damageMod, abilityMod,
+          attackBonus, range: def.range || 5, longRange: def.longRange || def.range || 5,
+          properties: regularProps, mastery,
+        });
+      }
+      continue;
+    }
+
     weapons.push({
       name: def.name,
       equipped: item.equipped || false,
