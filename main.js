@@ -4340,31 +4340,33 @@ async function rollDamageDice(isCrit, targetName, smite = null, sneak = null) {
   // Determine die type from weapon damage (e.g., "1d8" → "d8")
   const dieType = parseDieType(baseDice) || "d6";
 
-  // For crit: double the dice (e.g., 1d8 → 2d8, 2d6 → 4d6)
-  let notation = baseDice;
-  if (isCrit && hasDice) {
-    notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
-  }
+  const critDouble = (dice) => dice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
 
-  // Add Divine Smite dice
+  // For crit: double the dice (e.g., 1d8 → 2d8, 2d6 → 4d6)
+  let weaponNotation = baseDice;
+  if (isCrit && hasDice) weaponNotation = critDouble(baseDice);
+
+  // Build bonus dice groups (each rolled separately for 3D dice-box compatibility)
+  const bonusDiceGroups = [];
   if (smite) {
     let smiteDice = smite.dice;
-    if (isCrit) smiteDice = smiteDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
-    notation = hasDice ? `${notation}+${smiteDice}` : smiteDice;
+    if (isCrit) smiteDice = critDouble(smiteDice);
+    bonusDiceGroups.push({ dice: smiteDice, label: "Smite", type: "Radiant" });
   }
-
-  // Add Sneak Attack dice
   if (sneak) {
     let sneakDice = sneak.dice;
-    if (isCrit) sneakDice = sneakDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
-    notation = hasDice || smite ? `${notation}+${sneakDice}` : sneakDice;
+    if (isCrit) sneakDice = critDouble(sneakDice);
+    bonusDiceGroups.push({ dice: sneakDice, label: "Sneak Attack", type: damageType });
   }
+
+  // Full notation for display/log
+  const notation = [weaponNotation, ...bonusDiceGroups.map(g => g.dice)].join("+");
 
   let diceTotal, individualResults;
   let used3D = false;
 
   // Flat damage (e.g. Unarmed Strike "1") — no dice to roll
-  if (!hasDice) {
+  if (!hasDice && bonusDiceGroups.length === 0) {
     diceTotal = parseInt(baseDice) || 1;
     individualResults = [diceTotal];
     if (isCrit) diceTotal *= 2;  // Crit doubles flat damage too
@@ -4375,12 +4377,24 @@ async function rollDamageDice(isCrit, targetName, smite = null, sneak = null) {
       try {
         show3DOverlay(`${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`);
 
-        const results = await Promise.race([
-          diceBox.roll(notation, { themeColor: rollColor }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
-        ]);
-        diceTotal = results.reduce((sum, r) => sum + r.value, 0);
-        individualResults = results.map(r => r.value);
+        // Roll each dice group separately (dice-box can't mix die types in one call)
+        const allResults = [];
+        const rollGroups = hasDice ? [weaponNotation, ...bonusDiceGroups.map(g => g.dice)] : bonusDiceGroups.map(g => g.dice);
+        for (const group of rollGroups) {
+          const results = await Promise.race([
+            diceBox.roll(group, { themeColor: rollColor }),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+          ]);
+          allResults.push(...results);
+        }
+        diceTotal = allResults.reduce((sum, r) => sum + r.value, 0);
+        individualResults = allResults.map(r => r.value);
+        // Add flat base damage if weapon has no dice (e.g. Unarmed Strike "1" + sneak dice)
+        if (!hasDice) {
+          const flat = parseInt(baseDice) || 1;
+          diceTotal += flat;
+          individualResults.unshift(flat);
+        }
         used3D = true;
         playSfx("dice-hit");
         await new Promise((r) => setTimeout(r, 800));
@@ -4390,7 +4404,7 @@ async function rollDamageDice(isCrit, targetName, smite = null, sneak = null) {
       }
     }
 
-    // Fallback to canvas
+    // Fallback to canvas — rollDiceValues handles mixed notation like "1d4+1d6"
     if (!used3D) {
       const rolled = rollDiceValues(notation);
       diceTotal = rolled.diceTotal;
