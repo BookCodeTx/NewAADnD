@@ -498,20 +498,69 @@ function parseWeapons(d, stats, profBonus) {
     });
   }
 
-  // Always add Unarmed Strike
+  // ── Unarmed Strike (scales with class features) ──
+  let unarmedDie = "1";        // default: 1 + STR (no die)
+  let unarmedAbility = strMod;
+  let unarmedExtraProps = [];
+
+  // Monk: Martial Arts die scales with level, can use DEX
+  const monkClass = (d.classes || []).find(c => c.definition?.name === "Monk");
+  if (monkClass) {
+    const lvl = monkClass.level || 1;
+    if (lvl >= 17)     unarmedDie = "1d12";
+    else if (lvl >= 11) unarmedDie = "1d10";
+    else if (lvl >= 5)  unarmedDie = "1d8";
+    else                unarmedDie = "1d6";
+    // Martial Arts: use DEX if higher than STR
+    unarmedAbility = Math.max(strMod, dexMod);
+    unarmedExtraProps.push("Martial Arts");
+  }
+
+  // Fighter (Unarmed Fighting Style): 1d6 (or 1d8 with free hands)
+  const hasFightingStyle = allMods.some(m =>
+    (m.friendlySubtypeName || "").toLowerCase().includes("unarmed fighting") ||
+    (m.subType || "").toLowerCase().includes("unarmed-strike-damage-dice")
+  );
+  if (hasFightingStyle && unarmedDie === "1") {
+    unarmedDie = "1d6";
+    unarmedExtraProps.push("Unarmed Fighting");
+  }
+
+  // Check modifiers for any unarmed damage dice override from API
+  for (const mod of allMods) {
+    const sub = (mod.subType || "").toLowerCase();
+    if ((sub.includes("unarmed") && sub.includes("damage") && sub.includes("dice")) ||
+        sub === "unarmed-strike-damage-dice") {
+      if (mod.dice?.diceString) {
+        unarmedDie = mod.dice.diceString;
+      } else if (mod.value && mod.value > 1) {
+        unarmedDie = `1d${mod.value}`;
+      }
+    }
+  }
+
+  // Tavern Brawler feat: 1d4 if still flat 1
+  const hasTavernBrawler = allMods.some(m =>
+    (m.friendlySubtypeName || "").toLowerCase().includes("tavern brawler")
+  );
+  if (hasTavernBrawler && unarmedDie === "1") {
+    unarmedDie = "1d4";
+    unarmedExtraProps.push("Tavern Brawler");
+  }
+
   weapons.push({
     name: "Unarmed Strike",
     equipped: true,
     type: "Simple Melee",
     attackType: "melee",
-    damage: "1",
+    damage: unarmedDie,
     damageType: "Bludgeoning",
-    damageMod: strMod,
-    abilityMod: strMod,
-    attackBonus: strMod + profBonus,
+    damageMod: unarmedAbility + globalDmgBonus,
+    abilityMod: unarmedAbility,
+    attackBonus: unarmedAbility + profBonus + globalAtkBonus,
     range: 5,
     longRange: 5,
-    properties: [],
+    properties: unarmedExtraProps,
     mastery: [],
   });
 
