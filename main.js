@@ -4159,8 +4159,11 @@ const damageRollBtn = document.getElementById("damage-roll-btn");
 const smiteRow = document.getElementById("smite-row");
 const smiteToggle = document.getElementById("smite-toggle");
 const smiteSlotSelect = document.getElementById("smite-slot-select");
+const sneakRow = document.getElementById("sneak-row");
+const sneakToggle = document.getElementById("sneak-toggle");
 let pendingDamageCrit = false;
 let smiteActive = false;
+let sneakActive = false;
 
 smiteToggle.addEventListener("click", () => {
   smiteActive = !smiteActive;
@@ -4171,12 +4174,26 @@ smiteToggle.addEventListener("click", () => {
 
 smiteSlotSelect.addEventListener("change", () => updateDamageRollBtnText());
 
+sneakToggle.addEventListener("click", () => {
+  sneakActive = !sneakActive;
+  sneakToggle.classList.toggle("active", sneakActive);
+  updateDamageRollBtnText();
+});
+
 function getSmiteDice() {
   if (!smiteActive) return null;
   const slotLevel = parseInt(smiteSlotSelect.value) || 1;
   // Divine Smite: 2d8 at Lv1, +1d8 per level above 1
   const numDice = 1 + slotLevel;
   return { dice: `${numDice}d8`, slotLevel, type: "Radiant" };
+}
+
+function getSneakDice() {
+  if (!sneakActive) return null;
+  const source = attackerData || currentCharData;
+  const sa = source?.sneakAttack;
+  if (!sa) return null;
+  return { dice: sa.dice, type: "same" }; // "same" = uses weapon's damage type
 }
 
 function updateDamageRollBtnText() {
@@ -4188,14 +4205,27 @@ function updateDamageRollBtnText() {
   if (pendingDamageCrit) {
     notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
   }
+
+  // Collect bonus dice labels
+  const bonusParts = [];
   const smite = getSmiteDice();
   if (smite) {
     let smiteDice = smite.dice;
-    if (pendingDamageCrit) {
-      smiteDice = smiteDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
-    }
-    damageRollBtn.textContent = `🎲 Roll ${notation}+${smiteDice}${modStr}`;
-    damageRollInfo.textContent = `${selectedWeapon.name}: ${notation}${modStr} ${selectedWeapon.damageType || ""} + ⚡${smiteDice} Radiant${pendingDamageCrit ? " (CRIT)" : ""}`;
+    if (pendingDamageCrit) smiteDice = smiteDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
+    bonusParts.push({ dice: smiteDice, label: "⚡Smite", type: "Radiant" });
+  }
+  const sneak = getSneakDice();
+  if (sneak) {
+    let sneakDice = sneak.dice;
+    if (pendingDamageCrit) sneakDice = sneakDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
+    bonusParts.push({ dice: sneakDice, label: "🗡Sneak", type: selectedWeapon.damageType || "" });
+  }
+
+  if (bonusParts.length > 0) {
+    const bonusDiceStr = bonusParts.map(b => b.dice).join("+");
+    const bonusInfoStr = bonusParts.map(b => `${b.label} ${b.dice} ${b.type}`).join(" + ");
+    damageRollBtn.textContent = `🎲 Roll ${notation}+${bonusDiceStr}${modStr}`;
+    damageRollInfo.textContent = `${selectedWeapon.name}: ${notation}${modStr} ${selectedWeapon.damageType || ""} + ${bonusInfoStr}${pendingDamageCrit ? " (CRIT)" : ""}`;
   } else {
     const dmgType = selectedWeapon.damageType || "";
     damageRollBtn.textContent = `🎲 Roll ${notation}${modStr}`;
@@ -4206,17 +4236,18 @@ function updateDamageRollBtnText() {
 function showDamageRollPanel(title, isCrit) {
   pendingDamageCrit = isCrit;
   smiteActive = false;
+  sneakActive = false;
   smiteToggle.classList.remove("active");
+  sneakToggle.classList.remove("active");
   smiteSlotSelect.style.display = "none";
   damageRollTitle.textContent = title || "Roll Damage";
 
-  // Check if character has Divine Smite + melee attack + available spell slots
-  // Use attackerData (saved at weapon select) — currentCharData may have changed if token selection shifted
-  const smiteSource = attackerData || currentCharData;
-  const hasSmite = smiteSource?.spells?.some(s => s.name?.toLowerCase().includes("smite") && s.name?.toLowerCase().includes("divine") && (s.prepared || s.alwaysPrepared));
+  const source = attackerData || currentCharData;
+
+  // ── Divine Smite: melee + has spell + available slots ──
+  const hasSmite = source?.spells?.some(s => s.name?.toLowerCase().includes("smite") && s.name?.toLowerCase().includes("divine") && (s.prepared || s.alwaysPrepared));
   const isMelee = (combatAction === "attack" || combatAction === "spell-combo") && (selectedWeapon?.attackType === "melee" || !selectedWeapon?.attackType);
-  const availableSlots = (smiteSource?.spellSlots || []).filter(s => s.remaining > 0);
-  console.log("[smite] hasSmite:", hasSmite, "isMelee:", isMelee, "slots:", availableSlots.length, "spells:", smiteSource?.spells?.map(s => s.name));
+  const availableSlots = (source?.spellSlots || []).filter(s => s.remaining > 0);
 
   if (hasSmite && isMelee && availableSlots.length > 0) {
     smiteRow.classList.remove("hidden");
@@ -4227,21 +4258,24 @@ function showDamageRollPanel(title, isCrit) {
     smiteRow.classList.add("hidden");
   }
 
-  if (selectedWeapon && selectedWeapon.damage) {
-    const baseDice = selectedWeapon.damage;
-    const mod = selectedWeapon.damageMod || 0;
-    const modStr = mod !== 0 ? fmtMod(mod) : "";
-    const dmgType = selectedWeapon.damageType || "";
-    let notation = baseDice;
-    if (isCrit) {
-      notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
-    }
-    damageRollInfo.textContent = `${selectedWeapon.name}: ${notation}${modStr} ${dmgType}${isCrit ? " (CRIT x2 dice)" : ""}`;
-    damageRollBtn.textContent = `🎲 Roll ${notation}${modStr}`;
+  // ── Sneak Attack: Rogue + finesse/ranged weapon ──
+  const sa = source?.sneakAttack;
+  const isFinesse = selectedWeapon?.properties?.some(p => p.toLowerCase().includes("finesse"));
+  const isRanged = selectedWeapon?.attackType === "ranged";
+  const canSneak = sa && (combatAction === "attack") && (isFinesse || isRanged);
+
+  if (canSneak) {
+    sneakRow.classList.remove("hidden");
+    sneakToggle.textContent = `🗡️ Sneak Attack (${sa.dice})`;
+    // Auto-enable sneak attack (player can toggle off if they don't want it)
+    sneakActive = true;
+    sneakToggle.classList.add("active");
   } else {
-    damageRollInfo.textContent = "";
-    damageRollBtn.textContent = "🎲 Roll Damage";
+    sneakRow.classList.add("hidden");
   }
+
+  // Update button text (handles smite + sneak dice display)
+  updateDamageRollBtnText();
 
   damageRollPanel.classList.add("visible");
 }
@@ -4250,6 +4284,7 @@ function hideDamageRollPanel() { damageRollPanel.classList.remove("visible"); }
 
 damageRollBtn.addEventListener("click", async () => {
   const smite = getSmiteDice();
+  const sneak = getSneakDice();
   hideDamageRollPanel();
   if (!selectedWeapon || !selectedWeapon.damage) {
     selectedWeapon = selectedWeapon || { name: "Attack", damage: "1d4", damageMod: 0, damageType: "damage", attackType: "melee", properties: [], mastery: [] };
@@ -4277,8 +4312,13 @@ damageRollBtn.addEventListener("click", async () => {
     }
   }
 
+  // Log sneak attack
+  if (sneak) {
+    logCombat(`🗡️ <strong>Sneak Attack</strong> — +${sneak.dice} ${selectedWeapon.damageType || ""}`, "hit");
+  }
+
   const targetName = targetData?.name || "Target";
-  await rollDamageDice(pendingDamageCrit, targetName, smite);
+  await rollDamageDice(pendingDamageCrit, targetName, smite, sneak);
 });
 
 document.getElementById("damage-roll-cancel").addEventListener("click", () => {
@@ -4286,7 +4326,7 @@ document.getElementById("damage-roll-cancel").addEventListener("click", () => {
   resetCombat();
 });
 
-async function rollDamageDice(isCrit, targetName, smite = null) {
+async function rollDamageDice(isCrit, targetName, smite = null, sneak = null) {
   const weapon = selectedWeapon;
   const baseDice = weapon.damage || "1d4";
   const damageMod = weapon.damageMod || 0;
@@ -4307,6 +4347,13 @@ async function rollDamageDice(isCrit, targetName, smite = null) {
     let smiteDice = smite.dice;
     if (isCrit) smiteDice = smiteDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
     notation = hasDice ? `${notation}+${smiteDice}` : smiteDice;
+  }
+
+  // Add Sneak Attack dice
+  if (sneak) {
+    let sneakDice = sneak.dice;
+    if (isCrit) sneakDice = sneakDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
+    notation = hasDice || smite ? `${notation}+${sneakDice}` : sneakDice;
   }
 
   let diceTotal, individualResults;

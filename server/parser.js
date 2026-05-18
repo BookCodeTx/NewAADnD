@@ -58,6 +58,7 @@ export function parseCharacter(raw) {
     creatures: parseCreatures(d),
     ...parseDefenses(d),
     initiative: parseInitiative(d, stats, profBonus, classes),
+    sneakAttack: parseSneakAttack(d, classes),
   };
 }
 
@@ -455,6 +456,15 @@ function parseDefenses(d) {
   }
 
   return { resistances, immunities, vulnerabilities };
+}
+
+function parseSneakAttack(d, classes) {
+  const rogueClass = classes.find(c => c.name === "Rogue");
+  if (!rogueClass) return null;
+  const rogueLevel = rogueClass.level || 0;
+  if (rogueLevel < 1) return null;
+  const numDice = Math.ceil(rogueLevel / 2);
+  return { dice: `${numDice}d6`, numDice, type: "same" }; // "same" = same damage type as weapon
 }
 
 function parseInitiative(d, stats, profBonus, classes) {

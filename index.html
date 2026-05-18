@@ -229,6 +229,11 @@
     .smite-toggle.active { background: linear-gradient(180deg, #3a2800, #2a1800); border-color: #ffd700; box-shadow: 0 0 12px rgba(255,215,0,0.4); color: #fff; }
     .smite-slot-select { padding: 4px 8px; background: #0a0a14; border: 1px solid #ffd70044; border-radius: 4px; color: #ffd700; font-size: 11px; display: none; }
     .smite-toggle.active ~ .smite-slot-select { display: inline-block; }
+    .sneak-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 10px; }
+    .sneak-row.hidden { display: none; }
+    .sneak-toggle { padding: 6px 14px; background: #101a10; border: 2px solid #4caf5066; border-radius: 6px; color: #81c784; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+    .sneak-toggle:hover { border-color: #4caf50; background: #1a2a1a; }
+    .sneak-toggle.active { background: linear-gradient(180deg, #1a3a1a, #0a2a0a); border-color: #4caf50; box-shadow: 0 0 12px rgba(76,175,80,0.4); color: #fff; }
     .damage-roll-btn { padding: 12px 28px; background: linear-gradient(180deg, #e94560, #c03050); border: 2px solid #ff6080; border-radius: 8px; color: #fff; font-size: 16px; font-weight: 800; cursor: pointer; transition: all 0.15s; text-transform: uppercase; letter-spacing: 1px; }
     .damage-roll-btn:hover { background: linear-gradient(180deg, #ff5070, #e94560); border-color: #ffd700; box-shadow: 0 0 16px rgba(255,215,0,0.4); transform: scale(1.05); }
     .damage-roll-btn:active { transform: scale(0.95); }
@@ -774,6 +779,9 @@
       <div id="smite-row" class="smite-row hidden">
         <button id="smite-toggle" class="smite-toggle">⚡ Divine Smite</button>
         <select id="smite-slot-select" class="smite-slot-select"></select>
+      </div>
+      <div id="sneak-row" class="sneak-row hidden">
+        <button id="sneak-toggle" class="sneak-toggle">🗡️ Sneak Attack</button>
       </div>
       <div class="damage-roll-actions">
         <button class="damage-roll-btn" id="damage-roll-btn">🎲 Roll Damage</button>
