@@ -2081,9 +2081,9 @@ async function castAoeSpell(centerToken) {
 
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(`${caster.name} ${spell.name} Damage`, getDiceColor(dmgType));
+      show3DOverlay(`${caster.name} ${spell.name} Damage`);
       const results = await Promise.race([
-        diceBox.roll(dmgNotation),
+        diceBox.roll(dmgNotation, { themeColor: getDiceColor(dmgType) }),
         new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
       ]);
       diceTotal = results.reduce((sum, r) => sum + r.value, 0);
@@ -3652,9 +3652,9 @@ async function castSingleTargetSaveSpell(targetToken) {
 
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(`${caster.name} ${spell.name} Damage`, getDiceColor(dmgType));
+      show3DOverlay(`${caster.name} ${spell.name} Damage`);
       const results = await Promise.race([
-        diceBox.roll(dmgNotation),
+        diceBox.roll(dmgNotation, { themeColor: getDiceColor(dmgType) }),
         new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
       ]);
       diceTotal = results.reduce((sum, r) => sum + r.value, 0);
@@ -3828,9 +3828,9 @@ async function castComboAoE(centerTokenId) {
 
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(`${spell.name} Explosion Damage`, getDiceColor(aoeDmgType));
+      show3DOverlay(`${spell.name} Explosion Damage`);
       const results = await Promise.race([
-        diceBox.roll(aoeDmgNotation),
+        diceBox.roll(aoeDmgNotation, { themeColor: getDiceColor(aoeDmgType) }),
         new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
       ]);
       diceTotal = results.reduce((sum, r) => sum + r.value, 0);
@@ -3942,10 +3942,10 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
 
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(label, "#ff66aa");
+      show3DOverlay(label);
       const notation = rollMode !== "normal" ? "2d20" : "1d20";
       const results = await Promise.race([
-        diceBox.roll(notation),
+        diceBox.roll(notation, { themeColor: "#ff66aa" }),
         new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
       ]);
       roll1 = results[0]?.value || 1;
@@ -4158,44 +4158,53 @@ async function rollDamageDice(isCrit, targetName) {
   const baseDice = weapon.damage || "1d4";
   const damageMod = weapon.damageMod || 0;
   const damageType = weapon.damageType || "damage";
+  const hasDice = /\d+d\d+/.test(baseDice);
 
   // Determine die type from weapon damage (e.g., "1d8" → "d8")
   const dieType = parseDieType(baseDice) || "d6";
 
   // For crit: double the dice (e.g., 1d8 → 2d8, 2d6 → 4d6)
   let notation = baseDice;
-  if (isCrit) {
+  if (isCrit && hasDice) {
     notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
   }
 
   let diceTotal, individualResults;
   let used3D = false;
 
-  // Try 3D dice-box first
-  if (diceReady && diceBox) {
-    try {
-      show3DOverlay(`${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`, getDiceColor(damageType));
+  // Flat damage (e.g. Unarmed Strike "1") — no dice to roll
+  if (!hasDice) {
+    diceTotal = parseInt(baseDice) || 1;
+    individualResults = [diceTotal];
+    if (isCrit) diceTotal *= 2;  // Crit doubles flat damage too
+  } else {
+    // Try 3D dice-box first
+    const rollColor = getDiceColor(damageType);
+    if (diceReady && diceBox) {
+      try {
+        show3DOverlay(`${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`);
 
-      const results = await Promise.race([
-        diceBox.roll(notation),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
-      ]);
-      diceTotal = results.reduce((sum, r) => sum + r.value, 0);
-      individualResults = results.map(r => r.value);
-      used3D = true;
-      playSfx("dice-hit");
-      await new Promise((r) => setTimeout(r, 800));
-    } catch (err) {
-      console.warn("[dice] 3D damage roll failed, using canvas:", err.message);
-      hide3DOverlay();
+        const results = await Promise.race([
+          diceBox.roll(notation, { themeColor: rollColor }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+        ]);
+        diceTotal = results.reduce((sum, r) => sum + r.value, 0);
+        individualResults = results.map(r => r.value);
+        used3D = true;
+        playSfx("dice-hit");
+        await new Promise((r) => setTimeout(r, 800));
+      } catch (err) {
+        console.warn("[dice] 3D damage roll failed, using canvas:", err.message);
+        hide3DOverlay();
+      }
     }
-  }
 
-  // Fallback to canvas
-  if (!used3D) {
-    const rolled = rollDiceValues(notation);
-    diceTotal = rolled.diceTotal;
-    individualResults = rolled.individualResults;
+    // Fallback to canvas
+    if (!used3D) {
+      const rolled = rollDiceValues(notation);
+      diceTotal = rolled.diceTotal;
+      individualResults = rolled.individualResults;
+    }
   }
 
   // Add condition-based melee damage bonus (e.g. Rage +2)
@@ -4468,16 +4477,12 @@ async function initDiceBox() {
   diceInitializing = false;
 }
 
-function show3DOverlay(label, themeColor) {
+function show3DOverlay(label) {
   diceOverlay.className = "visible";
   dice3dLabel.textContent = label || "";
   dice3dResult.classList.remove("visible");
   dice3dResult.innerHTML = "";
   try { diceBox?.clear(); } catch {}
-  // Dynamically change dice color based on damage type
-  if (diceBox && themeColor) {
-    try { diceBox.updateConfig({ themeColor }); } catch {}
-  }
   // Trigger resize so canvas matches container size
   if (diceBox) {
     requestAnimationFrame(() => {
@@ -4592,10 +4597,10 @@ async function rollDice(notation, label, modifier = 0, rollId = null, condFx = n
   // Try embedded 3D dice-box first
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(label || notation, "#ff66aa");
+      show3DOverlay(label || notation);
 
       const results = await Promise.race([
-        diceBox.roll(notation),
+        diceBox.roll(notation, { themeColor: "#ff66aa" }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
       ]);
       diceTotal = results.reduce((sum, r) => sum + r.value, 0);
