@@ -1103,6 +1103,68 @@ function parseSpells(d, stats, profBonus) {
     }
   }
 
+  // ── Inject racial/feat actions that behave like spells (e.g. Breath Weapon) ──
+  const DAMAGE_TYPE_ID_MAP = {
+    1: "Bludgeoning", 2: "Piercing", 3: "Slashing", 4: "Necrotic", 5: "Acid",
+    6: "Cold", 7: "Fire", 8: "Lightning", 9: "Poison", 10: "Psychic",
+    11: "Radiant", 12: "Thunder", 13: "Force",
+  };
+  const actionSrc = ["race", "feat", "class"];
+  for (const src of actionSrc) {
+    for (const a of d.actions?.[src] || []) {
+      if (a.activation?.activationType !== 1) continue; // Action only
+      if (!a.dice?.diceString && !a.saveStatId) continue; // Need damage or save
+      const spellKey = a.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || `action_${a.id}`;
+      if (seen.has(spellKey)) continue;
+      seen.add(spellKey);
+
+      const dice = a.dice?.diceString || null;
+      const dmgType = DAMAGE_TYPE_ID_MAP[a.damageTypeId] || null;
+      const saveAbility = SAVE_ABILITY_MAP[a.saveStatId] || null;
+      const color = DAMAGE_TYPE_COLORS[dmgType] || "#aa88ff";
+
+      // Limited use tracking
+      let usesMax = a.limitedUse?.maxUses || 0;
+      if (a.limitedUse?.useProficiencyBonus) usesMax += profBonus;
+      const usesUsed = a.limitedUse?.numberUsed || 0;
+      const usesRemaining = Math.max(0, usesMax - usesUsed);
+      const resetNames = { 1: "Short Rest", 2: "Long Rest", 3: "Dawn" };
+      const resetType = resetNames[a.limitedUse?.resetType] || "";
+
+      spellList.push({
+        key: spellKey,
+        name: a.name,
+        level: 0,
+        school: "Racial",
+        damage: dice,
+        damageType: dmgType,
+        aoeDamage: null,
+        aoeDamageType: null,
+        healing: null,
+        healingMod: 0,
+        save: saveAbility,
+        isAoE: !!saveAbility, // Breath weapons are AoE saves
+        aoeRadius: 15,
+        aoeType: "cone",
+        isAttack: false,
+        attackBonus: null,
+        range: 15,
+        isHealing: false,
+        concentration: false,
+        ritual: false,
+        color,
+        description: `${usesRemaining}/${usesMax}${resetType ? " per " + resetType : ""}`,
+        activationType: 1,
+        prepared: true,
+        spellDC,
+        isSpecialAction: true, // Flag for non-spell actions
+        usesMax,
+        usesUsed,
+        usesRemaining,
+      });
+    }
+  }
+
   // Sort: cantrips first, then by level, then alphabetical
   spellList.sort((a, b) => {
     if (a.level !== b.level) return a.level - b.level;

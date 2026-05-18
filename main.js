@@ -365,8 +365,12 @@ function buildSpellGrid() {
       } else if (spell.isHealing) tags.push(`<span class="spell-tag heal">Heal</span>`);
       if (spell.concentration) tags.push(`<span class="spell-tag conc">Conc.</span>`);
       if (spell.ritual) tags.push(`<span class="spell-tag ritual">Ritual</span>`);
+      if (spell.isSpecialAction && spell.usesMax > 0) {
+        const usesLeft = spell.usesRemaining ?? 0;
+        tags.push(`<span class="spell-tag ${usesLeft > 0 ? "save" : "no-slots"}">${usesLeft}/${spell.usesMax}</span>`);
+      }
 
-      const lvStr = spell.level === 0 ? "Cantrip" : `Lv.${spell.level}`;
+      const lvStr = spell.isSpecialAction ? (spell.school || "Action") : spell.level === 0 ? "Cantrip" : `Lv.${spell.level}`;
       // Show slot info for leveled spells
       let slotInfo = "";
       if (spell.level > 0 && currentCharData?.spellSlots) {
