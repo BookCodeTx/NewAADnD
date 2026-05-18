@@ -247,7 +247,8 @@ function buildSpellGrid() {
       for (const slot of spellSlots) {
         const pips = [];
         for (let i = 0; i < slot.max; i++) {
-          pips.push(`<span class="slot-pip ${i < slot.remaining ? "filled" : "empty"}"></span>`);
+          const filled = i < slot.remaining;
+          pips.push(`<span class="slot-pip ${filled ? "filled" : "empty"}" data-slot-level="${slot.level}" data-pip-index="${i}"></span>`);
         }
         const pactLabel = slot.isPact ? " (Pact)" : "";
         const depletedClass = slot.remaining === 0 ? " depleted" : "";
@@ -259,6 +260,42 @@ function buildSpellGrid() {
           </div>
         `;
       }
+      // Click on pips to toggle slot usage
+      slotsRow.addEventListener("click", async (e) => {
+        const pip = e.target.closest(".slot-pip");
+        if (!pip || !currentCharData?.spellSlots) return;
+        const level = parseInt(pip.dataset.slotLevel);
+        const slot = currentCharData.spellSlots.find(s => s.level === level);
+        if (!slot) return;
+
+        const pipIndex = parseInt(pip.dataset.pipIndex);
+        const isFilled = pip.classList.contains("filled");
+
+        if (isFilled) {
+          // Use a slot (click filled pip → empty it)
+          slot.remaining = Math.max(0, slot.remaining - 1);
+          slot.used = slot.max - slot.remaining;
+        } else {
+          // Restore a slot (click empty pip → fill it)
+          slot.remaining = Math.min(slot.max, slot.remaining + 1);
+          slot.used = slot.max - slot.remaining;
+        }
+
+        // Save to OBR
+        await OBR.scene.items.updateItems([currentTokenId], (items) => {
+          for (const item of items) {
+            const meta = item.metadata[METADATA_KEY];
+            if (!meta?.character?.spellSlots) return;
+            const s = meta.character.spellSlots.find(sl => sl.level === level);
+            if (s) { s.remaining = slot.remaining; s.used = slot.used; }
+            meta.lastUpdated = Date.now();
+          }
+        });
+        currentCharData._lastUpdated = Date.now();
+
+        // Rebuild spell grid to reflect changes
+        buildSpellGrid();
+      });
       spellGrid.appendChild(slotsRow);
     }
 

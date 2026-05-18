@@ -259,9 +259,12 @@
     .spell-slot-group.depleted .slot-count { color: #884444; font-weight: 700; }
     .slot-label { color: #a088cc; font-weight: 600; min-width: 28px; }
     .slot-pips { display: flex; gap: 2px; }
-    .slot-pip { width: 9px; height: 9px; border-radius: 50%; border: 1px solid #a045e966; transition: all 0.3s; }
+    .slot-pip { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #a045e966; transition: all 0.2s; cursor: pointer; }
+    .slot-pip:hover { transform: scale(1.3); border-color: #d070ff; }
     .slot-pip.filled { background: #a045e9; box-shadow: 0 0 6px #a045e9aa; }
+    .slot-pip.filled:hover { background: #c060ff; box-shadow: 0 0 8px #c060ffcc; }
     .slot-pip.empty { background: #1a1030; border-color: #442255; }
+    .slot-pip.empty:hover { background: #2a1850; border-color: #a045e9; }
     .slot-count { color: #9977bb; font-size: 9px; font-weight: 600; }
     .spell-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #a045e944; border-radius: 4px; background: none; color: #a045e9; font-size: 10px; cursor: pointer; }
     .spell-cancel:hover { background: #a045e922; }

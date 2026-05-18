@@ -986,23 +986,55 @@ function parseSpells(d, stats, profBonus) {
 function parseSpellSlots(d) {
   const slots = [];
 
-  // Regular spell slots (from classSpells)
+  // Try classSpells first
   for (const cs of d.classSpells || []) {
     const slotArr = cs.spellSlots || [];
-    for (let i = 0; i < slotArr.length; i++) {
-      const slot = slotArr[i];
-      if (!slot || slot.level === 0) continue;
+    for (const slot of slotArr) {
+      if (!slot || slot.level === 0 || !slot.available) continue;
       const existing = slots.find(s => s.level === slot.level);
       if (existing) {
-        existing.max += (slot.available || 0);
+        existing.max += slot.available;
         existing.used += (slot.used || 0);
       } else {
         slots.push({
           level: slot.level,
-          max: slot.available || 0,
+          max: slot.available,
           used: slot.used || 0,
-          remaining: (slot.available || 0) - (slot.used || 0),
+          remaining: slot.available - (slot.used || 0),
         });
+      }
+    }
+  }
+
+  // If no slots found, calculate from spellRules.levelSpellSlots
+  if (slots.length === 0) {
+    for (const cls of d.classes || []) {
+      const rules = cls.definition?.spellRules;
+      if (!rules?.levelSpellSlots) continue;
+      const lvl = cls.level || 1;
+      const divisor = rules.multiClassSpellSlotDivisor || 1;
+      // For half-casters (Paladin, Ranger), use their own table
+      const slotRow = rules.levelSpellSlots[lvl];
+      if (!slotRow) continue;
+      for (let i = 0; i < slotRow.length; i++) {
+        const max = slotRow[i];
+        if (max <= 0) continue;
+        const level = i + 1;
+        const existing = slots.find(s => s.level === level);
+        if (existing) {
+          existing.max = Math.max(existing.max, max);
+        } else {
+          slots.push({ level, max, used: 0, remaining: max });
+        }
+      }
+    }
+    // Apply used counts from d.spellSlots if available
+    for (const slot of d.spellSlots || []) {
+      if (!slot || slot.level === 0) continue;
+      const existing = slots.find(s => s.level === slot.level);
+      if (existing && slot.used) {
+        existing.used = slot.used;
+        existing.remaining = existing.max - existing.used;
       }
     }
   }
@@ -1011,35 +1043,35 @@ function parseSpellSlots(d) {
   if (d.pactMagic) {
     const pactSlots = d.pactMagic.spellSlots || [];
     for (const slot of pactSlots) {
-      if (!slot || slot.level === 0) continue;
+      if (!slot || slot.level === 0 || !slot.available) continue;
       const existing = slots.find(s => s.level === slot.level);
       if (existing) {
-        existing.max += (slot.available || 0);
+        existing.max += slot.available;
         existing.used += (slot.used || 0);
         existing.remaining = existing.max - existing.used;
         existing.isPact = true;
       } else {
         slots.push({
           level: slot.level,
-          max: slot.available || 0,
+          max: slot.available,
           used: slot.used || 0,
-          remaining: (slot.available || 0) - (slot.used || 0),
+          remaining: slot.available - (slot.used || 0),
           isPact: true,
         });
       }
     }
-  }
-
-  // If no class data, try top-level spellSlots
-  if (slots.length === 0 && d.spellSlots) {
-    for (const slot of d.spellSlots) {
-      if (!slot || slot.level === 0 || !slot.available) continue;
-      slots.push({
-        level: slot.level,
-        max: slot.available || 0,
-        used: slot.used || 0,
-        remaining: (slot.available || 0) - (slot.used || 0),
-      });
+    // Fallback: calculate from pactMagic.level + rules
+    if (!pactSlots.some(s => s.available > 0) && d.pactMagic.level) {
+      // Warlock pact slots: 1 slot at lv1, 2 at lv2+, level = max warlock spell level
+      const warlockClass = d.classes?.find(c => c.definition?.name === "Warlock");
+      if (warlockClass) {
+        const wlvl = warlockClass.level;
+        const pactMax = wlvl >= 2 ? 2 : 1;
+        const pactLevel = Math.min(Math.ceil(wlvl / 2), 5);
+        if (pactMax > 0) {
+          slots.push({ level: pactLevel, max: pactMax, used: 0, remaining: pactMax, isPact: true });
+        }
+      }
     }
   }
 
