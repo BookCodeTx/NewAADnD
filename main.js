@@ -2,7 +2,7 @@ import OBR, { buildText } from "@owlbear-rodeo/sdk";
 import DiceBox from "@3d-dice/dice-box";
 import "@3d-dice/dice-box/dist/style.css";
 import { SPELLS, getSpellcastingDC, getSaveMod, tokensInRadius, rollSave, parseDamageNotation, DPI_PER_FOOT } from "./spells.js";
-import { CONDITIONS, getConditionPenalty, shouldAutoFailSave, getAttackerConditionEffects, getTargetConditionEffects, getSaveConditionEffects, getCheckConditionEffects, isIncapacitated, getMeleeDamageBonus } from "./conditions.js";
+import { CONDITIONS, getConditionPenalty, shouldAutoFailSave, getAttackerConditionEffects, getTargetConditionEffects, getSaveConditionEffects, getCheckConditionEffects, isIncapacitated, getMeleeDamageBonus, getTagColor } from "./conditions.js";
 import { playSfx } from "./sfx.js";
 import { playHitEffect, playCritEffect, playMissEffect, playHealEffect, playSpellEffect, screenShake, getDiceColor } from "./effects.js";
 import { parseCharacter } from "./server/parser.js";
@@ -2742,11 +2742,16 @@ async function buildCondGrid() {
       `;
     }
 
+    const tagsHTML = (cond.tags || []).map(tag => {
+      const tc = getTagColor(tag);
+      return `<span class="cond-tag" style="background:${tc.bg};color:${tc.color};border-color:${tc.border}">${tag}</span>`;
+    }).join("");
+
     card.innerHTML = `
       <span class="cond-icon">${cond.icon}</span>
       <div class="cond-info">
         <div class="cond-name">${cond.name}</div>
-        <div class="cond-desc">${cond.effect}</div>
+        <div class="cond-tags">${tagsHTML}</div>
       </div>
       ${rightHTML}
     `;

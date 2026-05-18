@@ -273,14 +273,16 @@
     #condition-picker { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1020, #161020); border: 2px solid #ff66aa; border-radius: 10px; margin-top: 6px; }
     #condition-picker.visible { display: block; }
     .cond-picker-title { color: #ff66aa; font-size: 11px; font-weight: 700; margin-bottom: 6px; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
-    .cond-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+    .cond-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; max-height: 340px; overflow-y: auto; padding-right: 2px; }
+    .cond-grid::-webkit-scrollbar { width: 4px; } .cond-grid::-webkit-scrollbar-thumb { background: #ff66aa44; border-radius: 2px; }
     .cond-card { padding: 5px 8px; background: #0f1020; border: 1px solid #331828; border-radius: 6px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
     .cond-card:hover { border-color: #ff66aa; background: #1a1028; }
     .cond-card.active-cond { border-color: #45e9a0; background: #0a2018; }
-    .cond-card .cond-icon { font-size: 14px; }
+    .cond-card .cond-icon { font-size: 14px; flex-shrink: 0; }
     .cond-card .cond-info { flex: 1; min-width: 0; }
     .cond-card .cond-name { font-size: 10px; font-weight: 700; color: #d0a0c0; }
-    .cond-card .cond-desc { font-size: 7px; color: #776688; }
+    .cond-card .cond-tags { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; }
+    .cond-card .cond-tag { font-size: 6.5px; padding: 1px 3px; border-radius: 3px; border: 1px solid; white-space: nowrap; font-weight: 600; line-height: 1.2; }
     .cond-card .cond-turns-input { width: 32px; padding: 2px 3px; border: 1px solid #ff66aa44; border-radius: 3px; background: #0a0a14; color: #ff66aa; font-size: 10px; text-align: center; flex-shrink: 0; }
     .cond-card .cond-turns-input:focus { outline: none; border-color: #ff66aa; }
     .cond-card .cond-turns-label { font-size: 7px; color: #776688; flex-shrink: 0; }
