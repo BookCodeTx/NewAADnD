@@ -4211,9 +4211,12 @@ function showDamageRollPanel(title, isCrit) {
   damageRollTitle.textContent = title || "Roll Damage";
 
   // Check if character has Divine Smite + melee attack + available spell slots
-  const hasSmite = currentCharData?.spells?.some(s => s.name === "Divine Smite" && s.prepared);
-  const isMelee = combatAction === "attack" && (selectedWeapon?.attackType === "melee" || !selectedWeapon?.attackType);
-  const availableSlots = (currentCharData?.spellSlots || []).filter(s => s.remaining > 0);
+  // Use attackerData (saved at weapon select) — currentCharData may have changed if token selection shifted
+  const smiteSource = attackerData || currentCharData;
+  const hasSmite = smiteSource?.spells?.some(s => s.name?.toLowerCase().includes("smite") && s.name?.toLowerCase().includes("divine") && (s.prepared || s.alwaysPrepared));
+  const isMelee = (combatAction === "attack" || combatAction === "spell-combo") && (selectedWeapon?.attackType === "melee" || !selectedWeapon?.attackType);
+  const availableSlots = (smiteSource?.spellSlots || []).filter(s => s.remaining > 0);
+  console.log("[smite] hasSmite:", hasSmite, "isMelee:", isMelee, "slots:", availableSlots.length, "spells:", smiteSource?.spells?.map(s => s.name));
 
   if (hasSmite && isMelee && availableSlots.length > 0) {
     smiteRow.classList.remove("hidden");
@@ -4254,12 +4257,14 @@ damageRollBtn.addEventListener("click", async () => {
   }
 
   // If smite active, consume spell slot and add smite dice
-  if (smite && currentCharData?.spellSlots) {
-    const slot = currentCharData.spellSlots.find(s => s.level === smite.slotLevel && s.remaining > 0);
+  const smiteChar = attackerData || currentCharData;
+  const smiteTokenId = attackerTokenId || currentTokenId;
+  if (smite && smiteChar?.spellSlots) {
+    const slot = smiteChar.spellSlots.find(s => s.level === smite.slotLevel && s.remaining > 0);
     if (slot) {
       slot.remaining--;
       slot.used++;
-      await OBR.scene.items.updateItems([currentTokenId], (items) => {
+      await OBR.scene.items.updateItems([smiteTokenId], (items) => {
         for (const item of items) {
           const meta = item.metadata[METADATA_KEY];
           if (!meta?.character?.spellSlots) return;
