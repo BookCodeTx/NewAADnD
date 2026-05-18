@@ -56,6 +56,7 @@ export function parseCharacter(raw) {
     features,
     spellSlots,
     creatures: parseCreatures(d),
+    ...parseDefenses(d),
   };
 }
 
@@ -425,6 +426,34 @@ function parseAC(d, stats) {
 function parseSpeed(d) {
   const walking = d.race?.weightSpeeds?.normal?.walk || 30;
   return walking;
+}
+
+function parseDefenses(d) {
+  const resistances = [];
+  const immunities = [];
+  const vulnerabilities = [];
+
+  const allMods = [
+    ...(d.modifiers?.race || []),
+    ...(d.modifiers?.class || []),
+    ...(d.modifiers?.background || []),
+    ...(d.modifiers?.item || []),
+    ...(d.modifiers?.feat || []),
+    ...(d.modifiers?.condition || []),
+  ];
+
+  for (const mod of allMods) {
+    const dmgType = (mod.friendlySubtypeName || mod.subType || "").replace(/-/g, " ");
+    if (!dmgType) continue;
+    const restriction = mod.restriction || null;
+    const entry = { type: dmgType, restriction };
+
+    if (mod.type === "resistance") resistances.push(entry);
+    else if (mod.type === "immunity") immunities.push(entry);
+    else if (mod.type === "vulnerability") vulnerabilities.push(entry);
+  }
+
+  return { resistances, immunities, vulnerabilities };
 }
 
 const MASTERY_PROPERTIES = ["Nick", "Vex", "Slow", "Graze", "Cleave", "Topple", "Push", "Sap"];

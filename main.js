@@ -1521,9 +1521,23 @@ function buildTokenSaveList() {
     const spellCount = char.spells?.length || 0;
     const featCount = char.features?.length || 0;
     const invCount = char.inventory?.length || 0;
+    // Defense badges (resistances, immunities, vulnerabilities)
+    const defBadges = [];
+    for (const r of (char.resistances || [])) {
+      defBadges.push(`<span class="def-badge resist">Resist ${r.type}</span>`);
+    }
+    for (const r of (char.immunities || [])) {
+      defBadges.push(`<span class="def-badge immune">Immune ${r.type}</span>`);
+    }
+    for (const r of (char.vulnerabilities || [])) {
+      defBadges.push(`<span class="def-badge vuln">Vuln ${r.type}</span>`);
+    }
+    const defStr = defBadges.length ? `<div class="def-row">${defBadges.join("")}</div>` : "";
+
     currentInfo.innerHTML = `
       <strong>${char.name}</strong> — Lv.${char.level} ${classStr}<br>
       ${hpStr} · AC ${char.ac} · ${weaponCount} weapons · ${spellCount} spells · ${featCount} features · ${invCount} items
+      ${defStr}
     `;
   }
 
@@ -4372,7 +4386,7 @@ async function rollDamageDice(isCrit, targetName, smite = null) {
 
 async function resolveDamage(result) {
   const { finalTotal } = result;
-  const damage = Math.max(0, finalTotal);
+  let damage = Math.max(0, finalTotal);
   const targetName = targetData?.name || "Target";
 
   if (!targetData || !targetTokenId) {
@@ -4380,6 +4394,26 @@ async function resolveDamage(result) {
     await OBR.notification.show(`${attackerData.name} deals ${damage} damage to ${targetName}!`, "SUCCESS");
     resetCombat();
     return;
+  }
+
+  // Check target's resistances / immunities / vulnerabilities
+  const dmgType = (selectedWeapon?.damageType || selectedSpell?.damageType || "").toLowerCase();
+  if (dmgType && targetData) {
+    const matchDef = (list, type) => (list || []).some(e =>
+      e.type.toLowerCase() === type || e.type.toLowerCase().includes(type)
+    );
+    if (matchDef(targetData.immunities, dmgType)) {
+      logCombat(`🛡️ <strong>${targetName}</strong> is <strong>IMMUNE</strong> to ${dmgType} — damage negated!`, "info");
+      damage = 0;
+    } else if (matchDef(targetData.resistances, dmgType)) {
+      const reduced = Math.floor(damage / 2);
+      logCombat(`🛡️ <strong>${targetName}</strong> has <strong>Resistance</strong> to ${dmgType} — ${damage} → ${reduced}`, "info");
+      damage = reduced;
+    } else if (matchDef(targetData.vulnerabilities, dmgType)) {
+      const doubled = damage * 2;
+      logCombat(`💥 <strong>${targetName}</strong> is <strong>Vulnerable</strong> to ${dmgType} — ${damage} → ${doubled}`, "info");
+      damage = doubled;
+    }
   }
 
   let remaining = damage;
