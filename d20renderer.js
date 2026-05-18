@@ -155,7 +155,7 @@ function updateParticles(ctx) {
     p.life -= p.decay; p.size *= 0.97;
     if (p.life <= 0) { particles.splice(i, 1); continue; }
     const a = p.life * 0.7;
-    const color = p.bright ? `rgba(255,120,80,${a})` : `rgba(200,60,40,${a})`;
+    const color = p.bright ? `rgba(255,130,180,${a})` : `rgba(200,80,140,${a})`;
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
     ctx.fillStyle = color;
@@ -284,22 +284,22 @@ function drawDice(ctx, dieType, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
     const ambient = 0.06;
     const light = ambient + diffMain * 0.38 + diffFill + rim;
 
-    // Base dark color (glossy black)
-    const baseR = lerp(6, 42, light);
-    const baseG = lerp(6, 38, light);
-    const baseB = lerp(10, 50, light);
+    // Base color (deep rose / pink tint)
+    const baseR = lerp(28, 80, light);
+    const baseG = lerp(8, 30, light);
+    const baseB = lerp(18, 52, light);
 
-    // Specular contribution
+    // Specular contribution (pink-tinted highlights)
     const specBoost = (spec + spec2) * 0.7;
     const fresnelBoost = fresnel;
-    const r = clamp(Math.round(baseR + 255 * specBoost + 80 * fresnelBoost), 0, 255);
-    const g = clamp(Math.round(baseG + 255 * specBoost + 80 * fresnelBoost), 0, 255);
-    const b = clamp(Math.round(baseB + 280 * specBoost + 100 * fresnelBoost), 0, 255);
+    const r = clamp(Math.round(baseR + 255 * specBoost + 140 * fresnelBoost), 0, 255);
+    const g = clamp(Math.round(baseG + 180 * specBoost + 60 * fresnelBoost), 0, 255);
+    const b = clamp(Math.round(baseB + 220 * specBoost + 100 * fresnelBoost), 0, 255);
 
-    // Lighter color for gradient highlight side
-    const hlR = clamp(Math.round(baseR * 1.8 + 255 * specBoost + 120 * fresnelBoost), 0, 255);
-    const hlG = clamp(Math.round(baseG * 1.8 + 255 * specBoost + 120 * fresnelBoost), 0, 255);
-    const hlB = clamp(Math.round(baseB * 1.8 + 280 * specBoost + 150 * fresnelBoost), 0, 255);
+    // Lighter color for gradient highlight side (pink shimmer)
+    const hlR = clamp(Math.round(baseR * 1.8 + 255 * specBoost + 160 * fresnelBoost), 0, 255);
+    const hlG = clamp(Math.round(baseG * 1.8 + 200 * specBoost + 80 * fresnelBoost), 0, 255);
+    const hlB = clamp(Math.round(baseB * 1.8 + 240 * specBoost + 130 * fresnelBoost), 0, 255);
 
     // Draw polygon path
     ctx.beginPath();
@@ -340,7 +340,7 @@ function drawDice(ctx, dieType, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
       for (let i = 1; i < pts2d.length; i++) ctx.lineTo(pts2d[i][0], pts2d[i][1]);
       ctx.closePath();
       const bevelAlpha = clamp(0.08 + spec * 0.15 + diffMain * 0.06, 0, 0.25);
-      ctx.strokeStyle = `rgba(180, 195, 220, ${bevelAlpha})`;
+      ctx.strokeStyle = `rgba(255, 160, 200, ${bevelAlpha})`;
       ctx.lineWidth = 1.8;
       ctx.stroke();
 
@@ -439,7 +439,7 @@ function drawDice(ctx, dieType, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
       // Subtle glow on specular faces
       if (spec > 0.1) {
         ctx.save();
-        ctx.shadowColor = `rgba(200, 220, 255, ${alpha * spec * 0.5})`;
+        ctx.shadowColor = `rgba(255, 180, 220, ${alpha * spec * 0.5})`;
         ctx.shadowBlur = 4;
         ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.3})`;
         ctx.fillText(String(number), cenX, cenY);
@@ -476,7 +476,7 @@ function drawDice(ctx, dieType, w, h, cx, cy, rx, ry, rz, scale, resultNumber) {
       ctx.beginPath();
       ctx.moveTo(a2d[0], a2d[1]);
       ctx.lineTo(b2d[0], b2d[1]);
-      ctx.strokeStyle = "rgba(120, 140, 180, 0.12)";
+      ctx.strokeStyle = "rgba(255, 140, 190, 0.12)";
       ctx.lineWidth = 1.0;
       ctx.stroke();
     } else if (isCrease) {

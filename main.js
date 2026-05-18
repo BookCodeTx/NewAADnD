@@ -2081,7 +2081,7 @@ async function castAoeSpell(centerToken) {
 
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(`${caster.name} ${spell.name} Damage`);
+      show3DOverlay(`${caster.name} ${spell.name} Damage`, getDiceColor(dmgType));
       const results = await Promise.race([
         diceBox.roll(dmgNotation),
         new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
@@ -3652,7 +3652,7 @@ async function castSingleTargetSaveSpell(targetToken) {
 
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(`${caster.name} ${spell.name} Damage`);
+      show3DOverlay(`${caster.name} ${spell.name} Damage`, getDiceColor(dmgType));
       const results = await Promise.race([
         diceBox.roll(dmgNotation),
         new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
@@ -3828,7 +3828,7 @@ async function castComboAoE(centerTokenId) {
 
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(`${spell.name} Explosion Damage`);
+      show3DOverlay(`${spell.name} Explosion Damage`, getDiceColor(aoeDmgType));
       const results = await Promise.race([
         diceBox.roll(aoeDmgNotation),
         new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
@@ -3942,7 +3942,7 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
 
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(label);
+      show3DOverlay(label, "#ff66aa");
       const notation = rollMode !== "normal" ? "2d20" : "1d20";
       const results = await Promise.race([
         diceBox.roll(notation),
@@ -4174,7 +4174,7 @@ async function rollDamageDice(isCrit, targetName) {
   // Try 3D dice-box first
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(`${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`);
+      show3DOverlay(`${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`, getDiceColor(damageType));
 
       const results = await Promise.race([
         diceBox.roll(notation),
@@ -4440,7 +4440,7 @@ async function initDiceBox() {
       origin,
       scale: 6,
       theme: "default",
-      themeColor: "#e94560",
+      themeColor: "#ff66aa",
       offscreen: false,       // Force onscreen mode (no Web Worker — works in iframes)
       enableShadows: true,
       shadowTransparency: 0.7,
@@ -4468,12 +4468,16 @@ async function initDiceBox() {
   diceInitializing = false;
 }
 
-function show3DOverlay(label) {
+function show3DOverlay(label, themeColor) {
   diceOverlay.className = "visible";
   dice3dLabel.textContent = label || "";
   dice3dResult.classList.remove("visible");
   dice3dResult.innerHTML = "";
   try { diceBox?.clear(); } catch {}
+  // Dynamically change dice color based on damage type
+  if (diceBox && themeColor) {
+    try { diceBox.updateConfig({ themeColor }); } catch {}
+  }
   // Trigger resize so canvas matches container size
   if (diceBox) {
     requestAnimationFrame(() => {
@@ -4588,7 +4592,7 @@ async function rollDice(notation, label, modifier = 0, rollId = null, condFx = n
   // Try embedded 3D dice-box first
   if (diceReady && diceBox) {
     try {
-      show3DOverlay(label || notation);
+      show3DOverlay(label || notation, "#ff66aa");
 
       const results = await Promise.race([
         diceBox.roll(notation),
