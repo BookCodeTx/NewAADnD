@@ -169,6 +169,10 @@ const COMBAT_LOG_CHANNEL = "com.dnd-hotbar/combat-log";
 const EFFECTS_METADATA_KEY = "com.dnd-hotbar/active-effects";
 
 
+// ── Format helpers ──
+/** Format a signed modifier: fmtMod(3)→"+3", fmtMod(-1)→"−1", fmtMod(0)→"+0" */
+function fmtMod(v) { return v >= 0 ? `+${v}` : `−${Math.abs(v)}`; }
+
 // ── Error helpers ──
 function showError(title, hint) { errorTitleText.textContent = title; errorHintText.textContent = hint || ""; errorBanner.classList.add("visible"); }
 function hideError() { errorBanner.classList.remove("visible"); }
@@ -551,7 +555,7 @@ function buildWeaponGrid() {
     const atkBonus = weapon.attackBonus ?? 0;
     const dmgMod = weapon.damageMod ?? 0;
     const atkSign = atkBonus >= 0 ? "+" : "";
-    const dmgStr = dmgMod !== 0 ? `${dmgMod >= 0 ? "+" : ""}${dmgMod}` : "";
+    const dmgStr = dmgMod !== 0 ? fmtMod(dmgMod) : "";
     const props = (weapon.properties || []).join(", ");
     const masteryTags = (weapon.mastery || []).map(m => `<span class="mastery-tag">${m}</span>`).join("");
     card.innerHTML = `
@@ -2092,8 +2096,8 @@ async function castAoeSpell(centerToken) {
     saveResults.push({ token, char, name, saved, roll, total });
 
     const saveStr = saved
-      ? `<strong class="hit">SAVE</strong> (${roll}+${saveMod}=${total})`
-      : `<strong class="miss">FAIL</strong> (${roll}+${saveMod}=${total})`;
+      ? `<strong class="hit">SAVE</strong> (${roll}${fmtMod(saveMod)}=${total})`
+      : `<strong class="miss">FAIL</strong> (${roll}${fmtMod(saveMod)}=${total})`;
     logCombat(`<strong>${name}</strong>: ${spell.save} ${saveStr}`, "spell");
   }
 
@@ -2219,7 +2223,7 @@ function showAoeResults(spell, dc, results, fullDmg = null, halfDmg = null) {
     : `${spell.name} — DC ${dc} ${spell.save} Save`;
   aoeTargetList.innerHTML = results.map((r) => {
     const saveClass = r.saved ? "saved" : "failed";
-    const saveText = r.autoFail ? "AUTO-FAIL" : `${r.roll}+${getSaveMod(r.char, spell.save)}=${r.total} ${r.saved ? "SAVE" : "FAIL"}`;
+    const saveText = r.autoFail ? "AUTO-FAIL" : `${r.roll}${fmtMod(getSaveMod(r.char, spell.save))}=${r.total} ${r.saved ? "SAVE" : "FAIL"}`;
     const dmgText = hasDmg ? ` → ${r.saved ? halfDmg : fullDmg}` : "";
     return `
       <div class="aoe-target ${saveClass}">
@@ -3323,7 +3327,7 @@ document.getElementById("init-roll-d20").addEventListener("click", () => {
     const roll = Math.floor(Math.random() * 20) + 1;
     const total = roll + initMod;
     initAddValue.value = total;
-    const modStr = initMod >= 0 ? `+${initMod}` : `${initMod}`;
+    const modStr = fmtMod(initMod);
     logCombat(`🎲 <strong>${initPendingToken.name}</strong> rolls initiative: <strong>${roll}</strong> ${modStr} = <strong>${total}</strong>`);
     // Flash the input
     initAddValue.style.borderColor = "#e9a045";
@@ -3668,7 +3672,7 @@ async function castSingleTargetSaveSpell(targetToken) {
 
     saved = total >= dc;
     const saveStr = saved ? `<strong class="hit">SAVE</strong>` : `<strong class="miss">FAIL</strong>`;
-    logCombat(`<strong>${name}</strong>: ${spell.save} Save ${roll}+${saveMod}=${total} ${saveStr}`, "spell");
+    logCombat(`<strong>${name}</strong>: ${spell.save} Save ${roll}${fmtMod(saveMod)}=${total} ${saveStr}`, "spell");
   }
 
   await broadcastSfx("spell");
@@ -3856,8 +3860,8 @@ async function castComboAoE(centerTokenId) {
     saveResults.push({ token, char, name, saved, roll, total });
 
     const saveStr = saved
-      ? `<strong class="hit">SAVE</strong> (${roll}+${saveMod}=${total})`
-      : `<strong class="miss">FAIL</strong> (${roll}+${saveMod}=${total})`;
+      ? `<strong class="hit">SAVE</strong> (${roll}${fmtMod(saveMod)}=${total})`
+      : `<strong class="miss">FAIL</strong> (${roll}${fmtMod(saveMod)}=${total})`;
     logCombat(`<strong>${name}</strong>: ${spell.save} ${saveStr}`, "spell");
   }
 
@@ -4039,7 +4043,7 @@ async function rollAttackD20(label, atkBonus, targetAC, targetName) {
   }
 
   // Broadcast
-  const modStr = atkBonus >= 0 ? `+${atkBonus}` : `${atkBonus}`;
+  const modStr = fmtMod(atkBonus);
   const notifText = `${attackerData?.name || ""} attacks ${targetName}: ${diceTotal}${modStr} = ${finalTotal} vs AC ${targetAC}`;
   OBR.notification.show(notifText, natValue === 20 ? "SUCCESS" : natValue === 1 ? "ERROR" : "INFO").catch(() => {});
   OBR.broadcast.sendMessage(SFX_CHANNEL, { sound: natValue === 20 ? "crit" : natValue === 1 ? "miss" : "dice-hit" }).catch(() => {});
@@ -4179,7 +4183,7 @@ function updateDamageRollBtnText() {
   if (!selectedWeapon?.damage) return;
   const baseDice = selectedWeapon.damage;
   const mod = selectedWeapon.damageMod || 0;
-  const modStr = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : "";
+  const modStr = mod !== 0 ? fmtMod(mod) : "";
   let notation = baseDice;
   if (pendingDamageCrit) {
     notation = baseDice.replace(/(\d+)d(\d+)/g, (_, n, d) => `${parseInt(n) * 2}d${d}`);
@@ -4223,7 +4227,7 @@ function showDamageRollPanel(title, isCrit) {
   if (selectedWeapon && selectedWeapon.damage) {
     const baseDice = selectedWeapon.damage;
     const mod = selectedWeapon.damageMod || 0;
-    const modStr = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : "";
+    const modStr = mod !== 0 ? fmtMod(mod) : "";
     const dmgType = selectedWeapon.damageType || "";
     let notation = baseDice;
     if (isCrit) {
@@ -4349,7 +4353,7 @@ async function rollDamageDice(isCrit, targetName, smite = null) {
   const totalDamage = Math.max(0, diceTotal + damageMod + condDmgBonus);
   const label = `${attackerData.name} ${weapon.name} ${isCrit ? "CRIT " : ""}Damage`;
   const effectiveMod = damageMod + condDmgBonus;
-  const modStr = effectiveMod > 0 ? `+${effectiveMod}` : effectiveMod < 0 ? `${effectiveMod}` : "";
+  const modStr = effectiveMod !== 0 ? fmtMod(effectiveMod) : "";
 
   const result = {
     notation, diceTotal, modifier: damageMod, finalTotal: totalDamage,
@@ -4513,9 +4517,9 @@ function applyMasteryOnHit(targetName, isDown) {
         const saveResult = rollSave(conMod);
         const saved = saveResult.total >= dc;
         if (saved) {
-          logCombat(`⚔️ <strong>Topple</strong>: ${targetName} CON Save ${saveResult.roll}+${conMod}=${saveResult.total} vs DC ${dc} — <strong class="hit">SAVED</strong>`, "info");
+          logCombat(`⚔️ <strong>Topple</strong>: ${targetName} CON Save ${saveResult.roll}${fmtMod(conMod)}=${saveResult.total} vs DC ${dc} — <strong class="hit">SAVED</strong>`, "info");
         } else {
-          logCombat(`⚔️ <strong>Topple</strong>: ${targetName} CON Save ${saveResult.roll}+${conMod}=${saveResult.total} vs DC ${dc} — <strong class="miss">PRONE!</strong>`, "hit");
+          logCombat(`⚔️ <strong>Topple</strong>: ${targetName} CON Save ${saveResult.roll}${fmtMod(conMod)}=${saveResult.total} vs DC ${dc} — <strong class="miss">PRONE!</strong>`, "hit");
         }
         break;
       }
@@ -4675,7 +4679,7 @@ function rollDiceValues(notation) {
 
 function showDiceResultDisplay(label, result, dieType) {
   const { diceTotal, modifier, finalTotal, natValue, individualResults } = result;
-  const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
+  const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` − ${Math.abs(modifier)}` : "";
   const detail = modifier !== 0 ? `${diceTotal}${modStr} = ${finalTotal}` : `${diceTotal}`;
 
   const resolvedDie = dieType || parseDieType(result.notation) || "d20";
@@ -4718,7 +4722,7 @@ function showDiceResultDisplay(label, result, dieType) {
 
 function show3DResult(label, result) {
   const { diceTotal, modifier, finalTotal, natValue } = result;
-  const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
+  const modStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` − ${Math.abs(modifier)}` : "";
   const detail = modifier !== 0 ? `${diceTotal}${modStr} = ${finalTotal}` : "";
 
   let extraHtml = "";
@@ -4806,7 +4810,7 @@ async function rollDice(notation, label, modifier = 0, rollId = null, condFx = n
   const sfxName = natValue === 20 ? "crit" : natValue === 1 ? "miss" : "dice-hit";
   OBR.broadcast.sendMessage(SFX_CHANNEL, { sound: sfxName }).catch(() => {});
 
-  const modStr = modifier > 0 ? `+${modifier}` : modifier < 0 ? `${modifier}` : "";
+  const modStr = modifier !== 0 ? fmtMod(modifier) : "";
   const notifText = charName
     ? `${charName} rolled ${notation}${modStr}: ${finalTotal}${natValue === 20 ? " (NAT 20!)" : natValue === 1 ? " (NAT 1)" : ""}`
     : `Rolled ${notation}${modStr}: ${finalTotal}`;
@@ -4814,7 +4818,7 @@ async function rollDice(notation, label, modifier = 0, rollId = null, condFx = n
 
   // Log to combat log for all players
   const diceStr = individualResults.length > 1 ? `[${individualResults.join(", ")}]` : `${diceTotal}`;
-  const logModStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` - ${Math.abs(modifier)}` : "";
+  const logModStr = modifier > 0 ? ` + ${modifier}` : modifier < 0 ? ` − ${Math.abs(modifier)}` : "";
   const logTotal = modifier !== 0 ? ` = <strong>${finalTotal}</strong>` : "";
   let natTag = "";
   if (natValue === 20) natTag = ' <strong class="crit">NAT 20!</strong>';
