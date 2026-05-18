@@ -6,6 +6,7 @@ import { CONDITIONS, getConditionPenalty, shouldAutoFailSave, getAttackerConditi
 import { playSfx } from "./sfx.js";
 import { playHitEffect, playCritEffect, playMissEffect, playHealEffect, playSpellEffect, screenShake, getDiceColor } from "./effects.js";
 import { parseCharacter } from "./server/parser.js";
+import { MONSTER_TEMPLATES, getMonsterGroups } from "./monsters.js";
 import { startDiceRoll, stopDiceRoll, startD20Roll, stopD20Roll, parseDieType } from "./d20renderer.js";
 
 const METADATA_KEY = "com.dnd-hotbar/character";
@@ -90,6 +91,33 @@ const tokenSavePanel = document.getElementById("token-save-panel");
 const monsterJson = document.getElementById("monster-json");
 const monsterApplyBtn = document.getElementById("monster-apply-btn");
 const monsterStatus = document.getElementById("monster-status");
+
+// Monster template selector
+const monsterTemplateSelect = document.getElementById("monster-template-select");
+const monsterTemplateBtn = document.getElementById("monster-template-btn");
+
+// Populate template dropdown
+{
+  const groups = getMonsterGroups();
+  for (const [label, monsters] of Object.entries(groups)) {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = label;
+    for (const m of monsters) {
+      const opt = document.createElement("option");
+      opt.value = m.key;
+      opt.textContent = m.name;
+      optgroup.appendChild(opt);
+    }
+    monsterTemplateSelect.appendChild(optgroup);
+  }
+}
+
+monsterTemplateBtn.addEventListener("click", () => {
+  const key = monsterTemplateSelect.value;
+  if (!key || !MONSTER_TEMPLATES[key]) return;
+  monsterJson.value = JSON.stringify(MONSTER_TEMPLATES[key], null, 2);
+  setMonsterStatus(`Loaded: ${MONSTER_TEMPLATES[key].name}`, false, true);
+});
 
 // HP Editor
 const hpEditor = document.getElementById("hp-editor");
