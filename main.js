@@ -3311,19 +3311,19 @@ function onInitTokenSelected(item) {
 initAddBtn.addEventListener("click", addInitToken);
 initAddValue.addEventListener("keydown", (e) => { if (e.key === "Enter") addInitToken(); });
 
-// Roll d20 + DEX for initiative
+// Roll d20 + initiative modifier
 document.getElementById("init-roll-d20").addEventListener("click", () => {
   if (!initPendingToken) return;
-  // Get DEX modifier from the token's character data
   const tokenId = initPendingToken.tokenId;
   OBR.scene.items.getItems([tokenId]).then(items => {
     const token = items[0];
     const char = token?.metadata?.[METADATA_KEY]?.character;
-    const dexMod = char?.stats?.find(s => s.name === "DEX")?.modifier || 0;
+    // Use parsed initiative modifier (includes DEX + feats like Alert, Jack of All Trades)
+    const initMod = char?.initiative ?? char?.stats?.find(s => s.name === "DEX")?.modifier ?? 0;
     const roll = Math.floor(Math.random() * 20) + 1;
-    const total = roll + dexMod;
+    const total = roll + initMod;
     initAddValue.value = total;
-    const modStr = dexMod >= 0 ? `+${dexMod}` : `${dexMod}`;
+    const modStr = initMod >= 0 ? `+${initMod}` : `${initMod}`;
     logCombat(`🎲 <strong>${initPendingToken.name}</strong> rolls initiative: <strong>${roll}</strong> ${modStr} = <strong>${total}</strong>`);
     // Flash the input
     initAddValue.style.borderColor = "#e9a045";

@@ -57,6 +57,7 @@ export function parseCharacter(raw) {
     spellSlots,
     creatures: parseCreatures(d),
     ...parseDefenses(d),
+    initiative: parseInitiative(d, stats, profBonus, classes),
   };
 }
 
@@ -454,6 +455,31 @@ function parseDefenses(d) {
   }
 
   return { resistances, immunities, vulnerabilities };
+}
+
+function parseInitiative(d, stats, profBonus, classes) {
+  const dexMod = stats.find(s => s.name === "DEX")?.modifier || 0;
+  let bonus = 0;
+
+  const allMods = [
+    ...(d.modifiers?.race || []),
+    ...(d.modifiers?.class || []),
+    ...(d.modifiers?.background || []),
+    ...(d.modifiers?.item || []),
+    ...(d.modifiers?.feat || []),
+  ];
+
+  for (const mod of allMods) {
+    const sub = (mod.subType || "").toLowerCase();
+    if (sub === "initiative" && mod.type === "bonus" && mod.value) {
+      bonus += mod.value; // e.g. Alert feat: +5
+    }
+    if (sub === "initiative" && mod.type === "half-proficiency") {
+      bonus += Math.floor(profBonus / 2); // Jack of All Trades
+    }
+  }
+
+  return dexMod + bonus;
 }
 
 const MASTERY_PROPERTIES = ["Nick", "Vex", "Slow", "Graze", "Cleave", "Topple", "Push", "Sap"];
