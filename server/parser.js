@@ -1003,6 +1003,7 @@ function parseSpells(d, stats, profBonus) {
       let aoeDamage = null;
       let aoeDamageType = null;
       let isHealing = false;
+      let healingUsesStat = true;
       const damageEntries = []; // { dice, type }
 
       // Check modifiers for damage dice
@@ -1016,7 +1017,10 @@ function parseSpells(d, stats, profBonus) {
         }
         if (mod.type === "bonus" && mod.subType === "hit-points") {
           isHealing = true;
+          healingUsesStat = mod.usePrimaryStat !== false; // default true unless explicitly false
           if (mod.die?.diceString) damage = mod.die.diceString;
+          else if (mod.die?.fixedValue) damage = String(mod.die.fixedValue);
+          else if (mod.value) damage = String(mod.value);
         }
       }
 
@@ -1102,7 +1106,7 @@ function parseSpells(d, stats, profBonus) {
         aoeDamage: aoeDamage || null,
         aoeDamageType: aoeDamageType || null,
         healing,
-        healingMod: isHealing ? castMod : 0,
+        healingMod: isHealing && healingUsesStat ? castMod : 0,
         save: saveType,
         isAoE,
         aoeRadius,
