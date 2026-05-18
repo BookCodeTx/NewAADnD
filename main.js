@@ -289,6 +289,7 @@ function buildSpellGrid() {
       if (spell.save) tags.push(`<span class="spell-tag save">${spell.save} Save</span>`);
       if (spell.isAttack) tags.push(`<span class="spell-tag atk">Attack +${spell.attackBonus}</span>`);
       if (spell.damage) tags.push(`<span class="spell-tag dmg">${spell.damage} ${spell.damageType || ""}</span>`);
+      if (spell.aoeDamage) tags.push(`<span class="spell-tag dmg">${spell.aoeDamage} ${spell.aoeDamageType || ""}</span>`);
       if (spell.healing) {
         const healMod = spell.healingMod ? `+${spell.healingMod}` : "";
         tags.push(`<span class="spell-tag heal">${spell.healing}${healMod} ❤️</span>`);
@@ -422,7 +423,23 @@ async function onSpellSelected(key, spell) {
   attackerTokenId = currentTokenId;
   document.querySelector(".hotbar-btn.spell")?.classList.add("active-action");
 
-  if (spell.isAoE) {
+  if (spell.isAttack && spell.aoeDamage && spell.save) {
+    // Combo spell (e.g. Ice Knife): attack roll + AoE save damage
+    combatAction = "spell-combo";
+    combatState = COMBAT.TARGETING;
+    selectedWeapon = {
+      name: spell.name,
+      attackBonus: spell.attackBonus || 0,
+      damage: spell.damage || "1d10",
+      damageType: spell.damageType || "Force",
+      damageMod: 0,
+      attackType: "ranged",
+      properties: [],
+      mastery: [],
+    };
+    showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token...");
+    logCombat(`<strong>${attackerData.name}</strong> prepares <strong>${spell.name}</strong> (${spell.aoeRadius}ft AoE after hit)`, "spell");
+  } else if (spell.isAoE) {
     combatState = COMBAT.AOE_CASTING;
     showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token as the AoE center...");
     logCombat(`<strong>${attackerData.name}</strong> prepares <strong>${spell.name}</strong> (${spell.aoeRadius}ft radius)`, "spell");
@@ -3692,6 +3709,169 @@ async function castSingleTargetSaveSpell(targetToken) {
 }
 
 
+// ════════════════════════════════════════
+// COMBO SPELL AoE PHASE (e.g. Ice Knife: attack → then AoE explosion)
+// ════════════════════════════════════════
+async function castComboAoE(centerTokenId) {
+  const spell = selectedSpell;
+  if (!spell || !spell.aoeDamage) { resetCombat(); return; }
+
+  const caster = attackerData;
+  const dc = spell.spellDC || getSpellcastingDC(caster);
+  const aoeDmgNotation = spell.aoeDamage;
+  const aoeDmgType = spell.aoeDamageType || "damage";
+  const aoeRadius = spell.aoeRadius || 5;
+
+  showCombatOverlay(`${spell.name} — Explosion!`, `${aoeRadius}ft ${spell.save} Save DC ${dc}...`);
+  logCombat(`💥 <strong>${spell.name}</strong> explodes! ${aoeRadius}ft radius — DC ${dc} ${spell.save} Save`, "spell");
+
+  // Find all tokens in radius (including the original target)
+  const allItems = await OBR.scene.items.getItems((item) => item.layer === "CHARACTER");
+  const centerToken = allItems.find(i => i.id === centerTokenId);
+  if (!centerToken) { resetCombat(); return; }
+
+  const centerPos = centerToken.position;
+  const inRadius = tokensInRadius(centerPos, aoeRadius, allItems.filter(i => i.id !== attackerTokenId));
+
+  // Make sure the center target is included
+  if (!inRadius.find(t => t.id === centerTokenId)) {
+    inRadius.push(centerToken);
+  }
+
+  if (inRadius.length === 0) {
+    logCombat(`${spell.name} explosion: No targets in ${aoeRadius}ft radius`, "spell");
+    resetCombat();
+    return;
+  }
+
+  // Roll saves for each target
+  const saveResults = [];
+  for (const token of inRadius) {
+    const meta = token.metadata?.[METADATA_KEY];
+    const char = meta?.character;
+    const name = char?.name || token.name || "Unknown";
+    const conditions = token.metadata?.[COND_METADATA_KEY] || [];
+    const saveFx = getSaveConditionEffects(conditions, spell.save);
+
+    if (saveFx.autoFail) {
+      saveResults.push({ token, char, name, saved: false, roll: 0, total: 0, autoFail: true });
+      logCombat(`<strong>${name}</strong>: <strong class="miss">AUTO-FAIL</strong> (condition)`, "spell");
+      continue;
+    }
+
+    const saveMod = getSaveMod(char, spell.save);
+    let { roll, total } = rollSave(saveMod);
+
+    if (saveFx.advantage || saveFx.disadvantage) {
+      const { roll: roll2, total: total2 } = rollSave(saveMod);
+      if (saveFx.advantage && total2 > total) { roll = roll2; total = total2; }
+      if (saveFx.disadvantage && total2 < total) { roll = roll2; total = total2; }
+    }
+
+    const saved = total >= dc;
+    saveResults.push({ token, char, name, saved, roll, total });
+
+    const saveStr = saved
+      ? `<strong class="hit">SAVE</strong> (${roll}+${saveMod}=${total})`
+      : `<strong class="miss">FAIL</strong> (${roll}+${saveMod}=${total})`;
+    logCombat(`<strong>${name}</strong>: ${spell.save} ${saveStr}`, "spell");
+  }
+
+  await broadcastSfx("spell");
+
+  // Auto-roll AoE damage
+  const dieType = parseDieType(aoeDmgNotation) || "d6";
+  let diceTotal, individualResults;
+  let used3D = false;
+
+  if (diceReady && diceBox) {
+    try {
+      show3DOverlay(`${spell.name} Explosion Damage`);
+      const results = await Promise.race([
+        diceBox.roll(aoeDmgNotation),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+      ]);
+      diceTotal = results.reduce((sum, r) => sum + r.value, 0);
+      individualResults = results.map(r => r.value);
+      used3D = true;
+      playSfx("dice-hit");
+      await new Promise((r) => setTimeout(r, 800));
+    } catch (err) {
+      console.warn("[dice] 3D combo AoE roll failed, using canvas:", err.message);
+      hide3DOverlay();
+    }
+  }
+
+  if (!used3D) {
+    const rolled = rollDiceValues(aoeDmgNotation);
+    diceTotal = rolled.diceTotal;
+    individualResults = rolled.individualResults;
+  }
+
+  const fullDamage = Math.max(0, diceTotal);
+  const halfDamage = Math.floor(fullDamage / 2);
+
+  const diceStr = individualResults.length > 1 ? `[${individualResults.join(", ")}]` : `${diceTotal}`;
+  const dmgLabel = `${spell.name} Explosion`;
+  const dmgResult = {
+    notation: aoeDmgNotation, diceTotal, modifier: 0, finalTotal: fullDamage,
+    natValue: null, charName: caster.name, label: dmgLabel,
+    rollId: crypto.randomUUID(), individualResults,
+  };
+
+  if (used3D) {
+    show3DResult(dmgLabel, dmgResult);
+    await new Promise((r) => setTimeout(r, 4000));
+  } else {
+    showDiceResultDisplay(dmgLabel, dmgResult, dieType);
+    await new Promise((r) => setTimeout(r, 6000));
+  }
+
+  logCombat(`💥 ${spell.name} explosion: ${aoeDmgNotation} → ${diceStr} = <strong class="damage">${fullDamage}</strong> ${aoeDmgType}`, "damage");
+  if (used3D) hide3DOverlay();
+
+  // Apply damage to all targets
+  const failCount = saveResults.filter(r => !r.saved).length;
+  const saveCount = saveResults.filter(r => r.saved).length;
+
+  const tokenIdsToUpdate = saveResults.filter(r => r.char).map(r => r.token.id);
+  await OBR.scene.items.updateItems(tokenIdsToUpdate, (items) => {
+    for (const item of items) {
+      const r = saveResults.find(r => r.token.id === item.id);
+      if (!r || !r.char) continue;
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta?.character) continue;
+      const dmg = r.saved ? halfDamage : fullDamage;
+      let remaining = dmg;
+      let temp = meta.character.hp.temp || 0;
+      if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
+      meta.character.hp.current = Math.max(0, meta.character.hp.current - remaining);
+      meta.character.hp.temp = temp;
+      meta.lastUpdated = Date.now();
+      logCombat(`<strong class="damage">${dmg}</strong> ${aoeDmgType} → <strong>${r.name}</strong>${r.saved ? " (half)" : ""}`, "damage");
+    }
+  });
+
+  await syncInitiativeHP();
+  await broadcastSfx("damage");
+  for (const r of saveResults) {
+    const dmg = r.saved ? halfDamage : fullDamage;
+    if (dmg > 0) await showFloatingDamage(r.token.id, dmg, aoeDmgType, { isSpell: true });
+    if (r.char) {
+      const updatedItems = await OBR.scene.items.getItems([r.token.id]);
+      const updatedMeta = updatedItems[0]?.metadata?.[METADATA_KEY];
+      if (updatedMeta?.character?.hp?.current === 0) {
+        addSkullToToken(r.token.id);
+      }
+    }
+  }
+
+  showCombatOverlay(`${spell.name} Explosion: ${fullDamage} ${aoeDmgType}!`,
+    `${failCount} failed (full), ${saveCount} saved (half: ${halfDamage})`);
+  await OBR.notification.show(`${spell.name} explosion: ${fullDamage} ${aoeDmgType}`, "SUCCESS");
+  setTimeout(() => resetCombat(), 3000);
+}
+
 async function rollAttackD20(label, atkBonus, targetAC, targetName) {
   // ── Determine advantage/disadvantage from conditions ──
   const attackerConds = currentConditions || [];
@@ -3840,7 +4020,12 @@ async function resolveAttackRoll(result) {
         await OBR.notification.show(`${attackerData.name} grazes ${targetName} for ${grazeDmg} damage!`, "WARNING");
         if (newCurrent === 0) addSkullToToken(targetTokenId);
       }
-      setTimeout(() => resetCombat(), 2500);
+      // Combo spell: AoE still triggers after graze
+      if (combatAction === "spell-combo" && selectedSpell?.aoeDamage) {
+        setTimeout(async () => { await castComboAoE(targetTokenId); }, 1500);
+      } else {
+        setTimeout(() => resetCombat(), 2500);
+      }
       return;
     }
 
@@ -3850,7 +4035,15 @@ async function resolveAttackRoll(result) {
     await broadcastSfx("miss");
     if (targetTokenId) tokenMissEffect(targetTokenId);
     await OBR.notification.show(`${attackerData.name} missed ${targetName}!`, "WARNING");
-    setTimeout(() => resetCombat(), 2000);
+
+    // Combo spell: AoE still triggers on miss (e.g. Ice Knife explodes regardless)
+    if (combatAction === "spell-combo" && selectedSpell?.aoeDamage) {
+      setTimeout(async () => {
+        await castComboAoE(targetTokenId);
+      }, 1500);
+    } else {
+      setTimeout(() => resetCombat(), 2000);
+    }
     return;
   }
 
@@ -4090,7 +4283,14 @@ async function resolveDamage(result) {
   // ── Weapon Mastery effects on hit ──
   applyMasteryOnHit(targetName, isDown);
 
-  setTimeout(() => resetCombat(), 3200);
+  // ── Combo spell: trigger AoE phase after attack damage ──
+  if (combatAction === "spell-combo" && selectedSpell?.aoeDamage) {
+    setTimeout(async () => {
+      await castComboAoE(targetTokenId);
+    }, 2000);
+  } else {
+    setTimeout(() => resetCombat(), 3200);
+  }
 }
 
 function applyMasteryOnHit(targetName, isDown) {

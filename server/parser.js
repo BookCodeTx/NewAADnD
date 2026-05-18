@@ -847,11 +847,13 @@ function parseSpells(d, stats, profBonus) {
       const duration = def.duration || {};
       const components = def.components || [];
 
-      // Parse damage
+      // Parse damage — separate attack damage from AoE/save damage for combo spells
       let damage = null;
       let damageType = null;
+      let aoeDamage = null;
+      let aoeDamageType = null;
       let isHealing = false;
-      const damageParts = [];
+      const damageEntries = []; // { dice, type }
 
       // Check modifiers for damage dice
       const modifiers = def.modifiers || [];
@@ -859,8 +861,7 @@ function parseSpells(d, stats, profBonus) {
         if (mod.type === "damage" && mod.die) {
           const die = mod.die;
           if (die.diceString) {
-            damageParts.push(die.diceString);
-            if (!damageType) damageType = mod.subType || mod.friendlySubtypeName || null;
+            damageEntries.push({ dice: die.diceString, type: mod.subType || mod.friendlySubtypeName || null });
           }
         }
         if (mod.type === "bonus" && mod.subType === "hit-points") {
@@ -869,11 +870,22 @@ function parseSpells(d, stats, profBonus) {
         }
       }
 
-      // Combine multiple DIFFERENT damage dice (e.g. Ice Knife: 1d10 + 2d6)
-      // If all dice are the same (e.g. Shillelagh 1d8/1d8), just use one
-      if (damageParts.length > 0 && !damage) {
-        const unique = [...new Set(damageParts)];
+      // For combo spells (attack + save, e.g. Ice Knife):
+      // First damage entry = attack damage, second = AoE/save damage
+      const hasAttack = def.attackType === 1 || def.attackType === 2;
+      const hasSave = !!def.saveDcAbilityId || def.requiresSavingThrow;
+
+      if (hasAttack && hasSave && damageEntries.length >= 2 && !damage) {
+        // Combo spell: separate attack damage from AoE damage
+        damage = damageEntries[0].dice;
+        damageType = damageEntries[0].type;
+        aoeDamage = damageEntries.slice(1).map(e => e.dice).join("+");
+        aoeDamageType = damageEntries[1].type;
+      } else if (damageEntries.length > 0 && !damage) {
+        // Normal: combine or deduplicate
+        const unique = [...new Set(damageEntries.map(e => e.dice))];
         damage = unique.join("+");
+        damageType = damageEntries[0].type;
       }
 
       // Fallback: check atHigherLevels for damage scaling hint
@@ -937,6 +949,8 @@ function parseSpells(d, stats, profBonus) {
         school,
         damage: isHealing ? null : (damage || null),
         damageType: damageType || null,
+        aoeDamage: aoeDamage || null,
+        aoeDamageType: aoeDamageType || null,
         healing,
         healingMod: isHealing ? castMod : 0,
         save: saveType,
