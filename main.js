@@ -3878,21 +3878,21 @@ async function castComboAoE(centerTokenId) {
       if (!r || !r.char) continue;
       const meta = item.metadata[METADATA_KEY];
       if (!meta?.character) continue;
-      const dmg = r.saved ? halfDamage : fullDamage;
+      const dmg = r.saved ? 0 : fullDamage;
       let remaining = dmg;
       let temp = meta.character.hp.temp || 0;
       if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
       meta.character.hp.current = Math.max(0, meta.character.hp.current - remaining);
       meta.character.hp.temp = temp;
       meta.lastUpdated = Date.now();
-      logCombat(`<strong class="damage">${dmg}</strong> ${aoeDmgType} → <strong>${r.name}</strong>${r.saved ? " (half)" : ""}`, "damage");
+      logCombat(`${r.saved ? `<strong>${r.name}</strong> saved — no damage` : `<strong class="damage">${dmg}</strong> ${aoeDmgType} → <strong>${r.name}</strong>`}`, "damage");
     }
   });
 
   await syncInitiativeHP();
   await broadcastSfx("damage");
   for (const r of saveResults) {
-    const dmg = r.saved ? halfDamage : fullDamage;
+    const dmg = r.saved ? 0 : fullDamage;
     if (dmg > 0) await showFloatingDamage(r.token.id, dmg, aoeDmgType, { isSpell: true });
     if (r.char) {
       const updatedItems = await OBR.scene.items.getItems([r.token.id]);
@@ -3904,7 +3904,7 @@ async function castComboAoE(centerTokenId) {
   }
 
   showCombatOverlay(`${spell.name} Explosion: ${fullDamage} ${aoeDmgType}!`,
-    `${failCount} failed (full), ${saveCount} saved (half: ${halfDamage})`);
+    `${failCount} failed (full dmg), ${saveCount} saved (no dmg)`);
   await OBR.notification.show(`${spell.name} explosion: ${fullDamage} ${aoeDmgType}`, "SUCCESS");
   setTimeout(() => resetCombat(), 3000);
 }
