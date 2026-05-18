@@ -1095,7 +1095,7 @@ function parseSpells(d, stats, profBonus) {
         color,
         description: descParts.join(", "),
         activationType,
-        prepared: spell.prepared || spell.alwaysPrepared || isFeatureGranted || false,
+        prepared: level === 0 || spell.prepared || spell.alwaysPrepared || isFeatureGranted || false,
         spellDC,
       };
 
