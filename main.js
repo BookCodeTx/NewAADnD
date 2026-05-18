@@ -2012,6 +2012,44 @@ async function onBonusSelected(action) {
     attackerTokenId = currentTokenId;
     document.querySelector(".hotbar-btn.bonus")?.classList.add("active-action");
     showCombatOverlay(`${attackerData.name}: ${action.name}`, "Click target token...");
+  } else if (action.type === "spell" && action.spellKey) {
+    // Bonus action spell — look up full spell data and use spell combat flow
+    const spell = currentCharData?.spells?.find(s => s.key === action.spellKey);
+    if (spell && (spell.isAttack || spell.save || spell.damage)) {
+      selectedSpell = spell;
+      attackerData = { ...currentCharData };
+      attackerTokenId = currentTokenId;
+      document.querySelector(".hotbar-btn.bonus")?.classList.add("active-action");
+
+      if (spell.isAttack) {
+        // Spell attack (e.g. Produce Flame) → targeting mode
+        combatAction = "spell-attack";
+        combatState = COMBAT.TARGETING;
+        selectedWeapon = {
+          name: spell.name, attackBonus: spell.attackBonus || 0,
+          damage: spell.damage || "1d10", damageType: spell.damageType || "Force",
+          damageMod: 0, attackType: "ranged", properties: [], mastery: [],
+        };
+        showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token...");
+        logCombat(`<strong>${attackerData.name}</strong> readies <strong>${spell.name}</strong> (spell attack ${fmtMod(spell.attackBonus || 0)})`, "spell");
+      } else if (spell.isAoE && spell.save) {
+        // AoE save spell as bonus action
+        combatAction = "spell-aoe";
+        combatState = COMBAT.AOE_CASTING;
+        showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token as AoE center...");
+        logCombat(`<strong>${attackerData.name}</strong> readies <strong>${spell.name}</strong> (${spell.aoeRadius}ft AoE)`, "spell");
+      } else if (spell.save) {
+        // Single target save spell as bonus action
+        combatAction = "spell-targeted";
+        combatState = COMBAT.TARGETING;
+        showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token...");
+        logCombat(`<strong>${attackerData.name}</strong> readies <strong>${spell.name}</strong> (DC ${spell.spellDC} ${spell.save})`, "spell");
+      } else {
+        await OBR.notification.show(`${currentCharData.name}: ${action.name} cast`, "INFO");
+      }
+    } else {
+      await OBR.notification.show(`${currentCharData.name}: ${action.name} declared`, "INFO");
+    }
   } else if (action.type === "skill" && action.skill) {
     const skill = currentCharData.skills?.find((s) => s.key === action.skill);
     if (skill) await rollDice("1d20", `${currentCharData.name} ${action.name}`, skill.modifier);

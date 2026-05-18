@@ -251,13 +251,34 @@ function parseBonusActions(d, classes, weapons) {
       const rawDesc = def.snippet || def.description || "";
       const description = rawDesc.replace(/<[^>]+>/g, "").replace(/&[a-z]+;/g, " ").trim().substring(0, 200);
 
+      // Link to spell key so the combat flow can find the full spell data
+      const spellKey = def.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || null;
+
       actions.push({
         key,
         name: def.name,
         description,
         type: "spell",
+        spellKey,
       });
     }
+  }
+
+  // Also include bonus action spells from d.spells.* (feature-granted)
+  const featureSources = [...(d.spells?.race || []), ...(d.spells?.class || []), ...(d.spells?.feat || []), ...(d.spells?.item || [])];
+  for (const s of featureSources) {
+    const def = s.definition;
+    if (!def || def.activation?.activationType !== ACTIVATION_BONUS_ACTION) continue;
+
+    const key = def.name?.toLowerCase().replace(/[^a-z0-9]+/g, "-") || `spell-${def.id}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+
+    const rawDesc = def.snippet || def.description || "";
+    const description = rawDesc.replace(/<[^>]+>/g, "").replace(/&[a-z]+;/g, " ").trim().substring(0, 200);
+    const spellKey = def.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || null;
+
+    actions.push({ key, name: def.name, description, type: "spell", spellKey });
   }
 
   // Universal bonus actions
