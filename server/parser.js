@@ -1352,26 +1352,59 @@ function parseCreatures(d) {
 function parseCreatureActions(html) {
   if (!html) return [];
   const actions = [];
-  // Match pattern: <strong>Name.</strong> description with attack/damage info
-  const regex = /<strong>([^<]+)\.<\/strong>\s*([^<]*(?:<[^>]*>[^<]*)*)/gi;
-  let match;
-  while ((match = regex.exec(html)) !== null) {
-    const name = match[1].trim();
-    let desc = match[2].replace(/<[^>]*>/g, "").trim();
-    if (desc.length > 200) desc = desc.slice(0, 200) + "...";
 
-    // Try to extract attack bonus and damage
-    const atkMatch = desc.match(/([+-]\d+)\s*to hit/i);
-    const dmgMatch = desc.match(/(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+(\w+)\s+damage/i);
+  // Strip all HTML to plain text first, then split by action names
+  // HTML formats vary: <em><strong>Name.</strong> Melee Attack:</em> +4, reach 5ft. Hit: 6 (1d8+2) Piercing damage.
+  // Split on action blocks: find each <strong>Name.</strong> block
+  const blockRegex = /<(?:em>\s*)?<strong>([^<]+)\.<\/strong>([\s\S]*?)(?=<(?:em>\s*)?<strong>|$)/gi;
+  let match;
+  while ((match = blockRegex.exec(html)) !== null) {
+    const name = match[1].trim();
+    // Strip all HTML tags to get clean text
+    let desc = match[2].replace(/<[^>]*>/g, "").trim();
+    if (desc.length > 300) desc = desc.slice(0, 300) + "...";
+
+    // Extract attack bonus: "+6 to hit" OR "+4, reach 5 ft" (new format: "Melee Attack Roll: +N")
+    const atkMatch = desc.match(/([+-]\d+)\s*(?:to hit|,\s*reach)/i)
+      || desc.match(/Attack Roll:\s*([+-]?\d+)/i);
+    const atkBonus = atkMatch ? parseInt(atkMatch[1]) : null;
+
+    // Extract damage: "9 (2d4 + 4) bludgeoning damage" or "6 (1d8 + 2) Piercing damage"
+    // The dice are inside parentheses after the average, damage type follows
+    const dmgMatch = desc.match(/\d+\s*\((\d+d\d+(?:\s*[+-]\s*\d+)?)\)\s*(\w+)\s*damage/i);
+    // Fallback: just "NdN+M type damage" without parentheses
+    const dmgMatch2 = !dmgMatch ? desc.match(/(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+(\w+)\s+damage/i) : null;
+    const dmgResult = dmgMatch || dmgMatch2;
 
     actions.push({
       name,
       description: desc,
-      attackBonus: atkMatch ? parseInt(atkMatch[1]) : null,
-      damage: dmgMatch ? dmgMatch[1].replace(/\s/g, "") : null,
-      damageType: dmgMatch ? dmgMatch[2] : null,
+      attackBonus: atkBonus,
+      damage: dmgResult ? dmgResult[1].replace(/\s/g, "") : null,
+      damageType: dmgResult ? dmgResult[2] : null,
     });
   }
+
+  // Fallback: if blockRegex found nothing, try the old simpler regex
+  if (actions.length === 0) {
+    const simpleRegex = /<strong>([^<]+)\.<\/strong>\s*([^<]*(?:<[^>]*>[^<]*)*)/gi;
+    while ((match = simpleRegex.exec(html)) !== null) {
+      const name = match[1].trim();
+      let desc = match[2].replace(/<[^>]*>/g, "").trim();
+      if (desc.length > 200) desc = desc.slice(0, 200) + "...";
+      const atkMatch = desc.match(/([+-]\d+)\s*(?:to hit|,\s*reach)/i) || desc.match(/Attack Roll:\s*([+-]?\d+)/i);
+      const dmgMatch = desc.match(/\d+\s*\((\d+d\d+(?:\s*[+-]\s*\d+)?)\)\s*(\w+)\s*damage/i)
+        || desc.match(/(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+(\w+)\s+damage/i);
+      actions.push({
+        name,
+        description: desc,
+        attackBonus: atkMatch ? parseInt(atkMatch[1]) : null,
+        damage: dmgMatch ? dmgMatch[1].replace(/\s/g, "") : null,
+        damageType: dmgMatch ? dmgMatch[2] : null,
+      });
+    }
+  }
+
   return actions;
 }
 
