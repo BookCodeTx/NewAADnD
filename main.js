@@ -4257,7 +4257,7 @@ async function handleSelectionChange() {
   // ── Player permission check: block GM-linked monster/NPC tokens only ──
   if (playerRole === "PLAYER" && meta?.character) {
     const isGmLinked = meta.linkedByRole === "GM"
-      || (!meta.linkedByRole && !meta.linkedByPlayerId);  // legacy tokens without linkedByRole = assume GM
+      || (!meta.linkedByRole && meta.linkedByPlayerId !== playerId && token.createdUserId !== playerId);  // legacy tokens: block unless it's your own
     if (isGmLinked) {
       // Player clicked a GM-linked monster/NPC token — show restricted view
       hideHotbar();
