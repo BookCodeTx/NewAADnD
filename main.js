@@ -658,6 +658,8 @@ async function resolveAoeDamage(fullDamage) {
   if (!results) { resetCombat(); return; }
   const halfDamage = Math.floor(fullDamage / 2);
 
+  // Track Wild Shape overflow candidates
+  const wsOverflowTargets = [];
   const tokenIdsToUpdate = results.filter((r) => r.char).map((r) => r.token.id);
   await OBR.scene.items.updateItems(tokenIdsToUpdate, (items) => {
     for (const item of items) {
@@ -669,19 +671,31 @@ async function resolveAoeDamage(fullDamage) {
       let remaining = dmg;
       let temp = meta.character.hp.temp || 0;
       if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
-      meta.character.hp.current = Math.max(0, meta.character.hp.current - remaining);
+      const newHp = Math.max(0, meta.character.hp.current - remaining);
+      // Check for Wild Shape overflow
+      if (newHp === 0 && meta.character._wildShapeOriginal) {
+        const overflow = remaining - meta.character.hp.current;
+        wsOverflowTargets.push({ tokenId: item.id, char: meta.character, overflow: Math.max(0, overflow), name: r.name });
+      }
+      meta.character.hp.current = newHp;
       meta.character.hp.temp = temp;
       meta.lastUpdated = Date.now();
       logCombat(`<strong class="damage">${dmg}</strong> → <strong>${r.name}</strong>${r.saved ? " (half)" : ""}`, "damage");
     }
   });
 
+  // Handle Wild Shape reversions after OBR update
+  for (const ws of wsOverflowTargets) {
+    logCombat(`🐾 <strong>${ws.char._wildShapeForm}</strong> form broken! (${ws.overflow > 0 ? ws.overflow + " overflow" : "no overflow"})`, "spell");
+    await wildShapeRevertWithOverflow(ws.tokenId, ws.char, ws.overflow);
+  }
+
   await syncInitiativeHP();
   await broadcastSfx("damage");
   for (const r of results) {
     const dmg = r.saved ? halfDamage : fullDamage;
     if (dmg > 0) await showFloatingDamage(r.token.id, dmg, "Force", { isSpell: true });
-    // Add skull if token dropped to 0 HP
+    // Add skull if token dropped to 0 HP (and not reverted from Wild Shape)
     if (r.char) {
       const meta = r.token.metadata?.[METADATA_KEY];
       if (meta?.character?.hp?.current === 0) {
@@ -1677,6 +1691,15 @@ function buildWildShapeList() {
   const isTransformed = !!char._wildShapeOriginal;
   revertBtn?.classList.toggle("hidden", !isTransformed);
 
+  // Show uses remaining
+  const wsFeature = char.features?.find(f => f.name?.toLowerCase().includes("wild shape"));
+  const wsTitle = document.querySelector(".ws-title");
+  if (wsTitle && wsFeature && wsFeature.remaining !== null) {
+    wsTitle.textContent = `🐾 Wild Shape (${wsFeature.remaining}/${wsFeature.maxUses})`;
+  } else if (wsTitle) {
+    wsTitle.textContent = "🐾 Wild Shape";
+  }
+
   for (const creature of char.creatures || []) {
     const card = document.createElement("div");
     card.className = "ws-card";
@@ -1724,6 +1747,22 @@ async function wildShapeTransform(creature) {
   const char = currentCharData;
   if (!char || !currentTokenId) return;
 
+  // Check Wild Shape uses (from features)
+  if (!char._wildShapeOriginal) {
+    const wsFeature = char.features?.find(f => f.name?.toLowerCase().includes("wild shape"));
+    if (wsFeature && wsFeature.remaining !== null && wsFeature.remaining <= 0) {
+      logCombat(`❌ No Wild Shape uses remaining (${wsFeature.resetType || "Short Rest"} to recharge)`, "miss");
+      OBR.notification.show("No Wild Shape uses remaining!", "WARNING");
+      return;
+    }
+    // Consume a use
+    if (wsFeature && wsFeature.remaining !== null) {
+      wsFeature.remaining--;
+      wsFeature.usedCount++;
+      logCombat(`🐾 Wild Shape use consumed (${wsFeature.remaining}/${wsFeature.maxUses} remaining)`, "info");
+    }
+  }
+
   // Save original form if not already transformed
   if (!char._wildShapeOriginal) {
     char._wildShapeOriginal = {
@@ -1747,20 +1786,28 @@ async function wildShapeTransform(creature) {
       char.stats[i] = { ...creature.stats[i] };
     }
   }
-  // Replace weapons with beast actions
-  char.weapons = (creature.actions || []).map(a => ({
-    name: a.name,
-    equipped: true,
-    type: "Natural Weapon",
-    damage: a.damage || "1d4",
-    damageType: a.damageType || "Slashing",
-    damageMod: 0,
-    range: "5",
-    properties: [],
-    mastery: [],
-    attackBonus: a.attackBonus ?? 0,
-    attackType: "melee",
-  }));
+  // Replace weapons with beast actions — calculate abilityMod from beast STR/DEX
+  const beastStr = creature.stats?.[0]?.modifier ?? 0;
+  const beastDex = creature.stats?.[1]?.modifier ?? 0;
+  char.weapons = (creature.actions || []).map(a => {
+    // Determine if attack is finesse-like (use higher of STR/DEX)
+    const isRanged = a.description?.toLowerCase().includes("ranged") || false;
+    const abilityMod = isRanged ? beastDex : Math.max(beastStr, beastDex);
+    return {
+      name: a.name,
+      equipped: true,
+      type: "Natural Weapon",
+      damage: a.damage || "1d4",
+      damageType: a.damageType || "Slashing",
+      damageMod: 0,
+      abilityMod,
+      range: isRanged ? "30" : "5",
+      properties: [],
+      mastery: [],
+      attackBonus: a.attackBonus ?? 0,
+      attackType: isRanged ? "ranged" : "melee",
+    };
+  });
 
   // Save to OBR
   await OBR.scene.items.updateItems([currentTokenId], (items) => {
@@ -1775,39 +1822,68 @@ async function wildShapeTransform(creature) {
 
   showHotbar(char);
   buildWildShapeList();
+  hideWildShapePanel();
   logCombat(`🐾 <strong>${char._wildShapeOriginal.name}</strong> transforms into <strong>${creature.name}</strong>! (HP: ${char.hp.current}/${char.hp.max}, AC: ${char.ac})`, "spell");
   OBR.notification.show(`Wild Shape: ${creature.name}!`, "SUCCESS");
+}
+
+// Revert Wild Shape with optional overflow damage to original form
+async function wildShapeRevertWithOverflow(tokenId, charData, overflowDamage = 0) {
+  if (!charData?._wildShapeOriginal || !tokenId) return false;
+
+  const orig = charData._wildShapeOriginal;
+  const formName = charData._wildShapeForm;
+
+  // Restore original form
+  charData.ac = orig.ac;
+  charData.speed = orig.speed;
+  charData.stats = JSON.parse(JSON.stringify(orig.stats));
+  charData.weapons = JSON.parse(JSON.stringify(orig.weapons));
+
+  // Apply overflow damage to original HP
+  const origHp = { ...orig.hp };
+  if (overflowDamage > 0) {
+    let remaining = overflowDamage;
+    if (origHp.temp > 0) {
+      const absorbed = Math.min(origHp.temp, remaining);
+      origHp.temp -= absorbed;
+      remaining -= absorbed;
+    }
+    origHp.current = Math.max(0, origHp.current - remaining);
+  }
+  charData.hp = origHp;
+
+  delete charData._wildShapeOriginal;
+  delete charData._wildShapeForm;
+
+  // Save to OBR
+  await OBR.scene.items.updateItems([tokenId], (items) => {
+    for (const item of items) {
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta) return;
+      meta.character = charData;
+      meta.lastUpdated = Date.now();
+    }
+  });
+  charData._lastUpdated = Date.now();
+
+  const overflowMsg = overflowDamage > 0 ? ` (${overflowDamage} overflow damage → ${charData.hp.current}/${charData.hp.max} HP)` : "";
+  logCombat(`↩️ <strong>${charData.name}</strong> reverts from <strong>${formName}</strong> form!${overflowMsg}`, "spell");
+  OBR.notification.show(`Wild Shape broken! ${charData.name} reverts!${overflowDamage > 0 ? ` (${overflowDamage} overflow)` : ""}`, "WARNING");
+
+  // Refresh UI if this is the currently selected token
+  if (tokenId === currentTokenId) {
+    showHotbar(charData);
+    buildWildShapeList();
+  }
+
+  return true;
 }
 
 async function wildShapeRevert() {
   const char = currentCharData;
   if (!char?._wildShapeOriginal || !currentTokenId) return;
-
-  const orig = char._wildShapeOriginal;
-  const formName = char._wildShapeForm;
-  char.hp = { ...orig.hp };
-  char.ac = orig.ac;
-  char.speed = orig.speed;
-  char.stats = JSON.parse(JSON.stringify(orig.stats));
-  char.weapons = JSON.parse(JSON.stringify(orig.weapons));
-  delete char._wildShapeOriginal;
-  delete char._wildShapeForm;
-
-  // Save to OBR
-  await OBR.scene.items.updateItems([currentTokenId], (items) => {
-    for (const item of items) {
-      const meta = item.metadata[METADATA_KEY];
-      if (!meta) return;
-      meta.character = char;
-      meta.lastUpdated = Date.now();
-    }
-  });
-  char._lastUpdated = Date.now();
-
-  showHotbar(char);
-  buildWildShapeList();
-  logCombat(`↩️ <strong>${char.name}</strong> reverts from <strong>${formName}</strong> form!`, "spell");
-  OBR.notification.show(`Reverted to ${char.name}!`, "SUCCESS");
+  await wildShapeRevertWithOverflow(currentTokenId, char, 0);
 }
 
 document.getElementById("ws-revert-btn")?.addEventListener("click", wildShapeRevert);
@@ -2221,6 +2297,7 @@ async function castAoeSpell(centerToken) {
   showAoeResults(spell, dc, saveResults, fullDamage, halfDamage);
 
   // Apply damage to all targets
+  const wsOverflowTargets2 = [];
   const tokenIdsToUpdate = saveResults.filter((r) => r.char).map((r) => r.token.id);
   await OBR.scene.items.updateItems(tokenIdsToUpdate, (items) => {
     for (const item of items) {
@@ -2232,12 +2309,23 @@ async function castAoeSpell(centerToken) {
       let remaining = dmg;
       let temp = meta.character.hp.temp || 0;
       if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
-      meta.character.hp.current = Math.max(0, meta.character.hp.current - remaining);
+      const newHp = Math.max(0, meta.character.hp.current - remaining);
+      if (newHp === 0 && meta.character._wildShapeOriginal) {
+        const overflow = remaining - meta.character.hp.current;
+        wsOverflowTargets2.push({ tokenId: item.id, char: meta.character, overflow: Math.max(0, overflow), name: r.name });
+      }
+      meta.character.hp.current = newHp;
       meta.character.hp.temp = temp;
       meta.lastUpdated = Date.now();
       logCombat(`<strong class="damage">${dmg}</strong> ${dmgType} → <strong>${r.name}</strong>${r.saved ? " (half)" : ""}`, "damage");
     }
   });
+
+  // Handle Wild Shape reversions after OBR update
+  for (const ws of wsOverflowTargets2) {
+    logCombat(`🐾 <strong>${ws.char._wildShapeForm}</strong> form broken! (${ws.overflow > 0 ? ws.overflow + " overflow" : "no overflow"})`, "spell");
+    await wildShapeRevertWithOverflow(ws.tokenId, ws.char, ws.overflow);
+  }
 
   await syncInitiativeHP();
   await broadcastSfx("damage");
@@ -2667,7 +2755,19 @@ document.getElementById("hp-btn-damage").addEventListener("click", async () => {
     temp -= absorbed;
     remaining -= absorbed;
   }
-  await applyHpChange(currentCharData.hp.current - remaining, null, temp, `−${amt} damage`);
+  const newHp = currentCharData.hp.current - remaining;
+
+  // Wild Shape overflow on manual damage
+  if (newHp <= 0 && currentCharData._wildShapeOriginal && currentTokenId) {
+    const overflow = Math.abs(newHp);
+    logCombat(`🐾 <strong>${currentCharData._wildShapeForm}</strong> form broken! (${overflow > 0 ? overflow + " overflow damage" : "no overflow"})`, "spell");
+    await wildShapeRevertWithOverflow(currentTokenId, currentCharData, overflow);
+    refreshHpEditor();
+    hpAmountInput.value = "";
+    return;
+  }
+
+  await applyHpChange(newHp, null, temp, `−${amt} damage`);
 });
 
 document.getElementById("hp-btn-heal").addEventListener("click", async () => {
@@ -3796,18 +3896,32 @@ async function castSingleTargetSaveSpell(targetToken) {
     let remaining = appliedDamage;
     let newTemp = char.hp.temp || 0;
     if (newTemp > 0) { const absorbed = Math.min(newTemp, remaining); newTemp -= absorbed; remaining -= absorbed; }
-    const newCurrent = Math.max(0, char.hp.current - remaining);
-    const isDown = newCurrent === 0;
+    let newCurrent = Math.max(0, char.hp.current - remaining);
+    let isDown = newCurrent === 0;
+    let wsReverted = false;
 
-    await OBR.scene.items.updateItems([targetToken.id], (items) => {
-      for (const item of items) {
-        const m = item.metadata[METADATA_KEY];
-        if (!m?.character) return;
-        m.character.hp.current = newCurrent;
-        m.character.hp.temp = newTemp;
-        m.lastUpdated = Date.now();
-      }
-    });
+    // Wild Shape overflow
+    if (isDown && char._wildShapeOriginal) {
+      const overflow = remaining - char.hp.current;
+      logCombat(`🐾 <strong>${char._wildShapeForm}</strong> form broken by ${spell.name}! (${overflow > 0 ? overflow + " overflow" : "no overflow"})`, "spell");
+      await wildShapeRevertWithOverflow(targetToken.id, char, Math.max(0, overflow));
+      newCurrent = char.hp.current;
+      isDown = newCurrent === 0;
+      wsReverted = true;
+      newTemp = char.hp.temp || 0;
+    }
+
+    if (!wsReverted) {
+      await OBR.scene.items.updateItems([targetToken.id], (items) => {
+        for (const item of items) {
+          const m = item.metadata[METADATA_KEY];
+          if (!m?.character) return;
+          m.character.hp.current = newCurrent;
+          m.character.hp.temp = newTemp;
+          m.lastUpdated = Date.now();
+        }
+      });
+    }
 
     await syncInitiativeHP();
     await broadcastSfx("damage");
@@ -3822,7 +3936,9 @@ async function castSingleTargetSaveSpell(targetToken) {
 
     logCombat(
       `<strong class="damage">${appliedDamage}</strong> ${dmgType} → <strong>${name}</strong>: ` +
-      `<strong>${char.hp.current}</strong> → <strong class="${isDown ? "miss" : ""}">${newCurrent}</strong>/${char.hp.max} HP` +
+      (wsReverted
+        ? `<strong>Wild Shape broken</strong> → <strong class="${isDown ? "miss" : ""}">${newCurrent}</strong>/${char.hp.max} HP`
+        : `<strong>${char.hp.current}</strong> → <strong class="${isDown ? "miss" : ""}">${newCurrent}</strong>/${char.hp.max} HP`) +
       (saved ? " (half)" : "") + (isDown ? ` — <strong class="miss">DOWN!</strong>` : ""),
       "damage"
     );
@@ -3964,6 +4080,7 @@ async function castComboAoE(centerTokenId) {
   const failCount = saveResults.filter(r => !r.saved).length;
   const saveCount = saveResults.filter(r => r.saved).length;
 
+  const wsOverflowTargets3 = [];
   const tokenIdsToUpdate = saveResults.filter(r => r.char).map(r => r.token.id);
   await OBR.scene.items.updateItems(tokenIdsToUpdate, (items) => {
     for (const item of items) {
@@ -3975,12 +4092,22 @@ async function castComboAoE(centerTokenId) {
       let remaining = dmg;
       let temp = meta.character.hp.temp || 0;
       if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
-      meta.character.hp.current = Math.max(0, meta.character.hp.current - remaining);
+      const newHp = Math.max(0, meta.character.hp.current - remaining);
+      if (newHp === 0 && meta.character._wildShapeOriginal) {
+        const overflow = remaining - meta.character.hp.current;
+        wsOverflowTargets3.push({ tokenId: item.id, char: meta.character, overflow: Math.max(0, overflow), name: r.name });
+      }
+      meta.character.hp.current = newHp;
       meta.character.hp.temp = temp;
       meta.lastUpdated = Date.now();
       logCombat(`${r.saved ? `<strong>${r.name}</strong> saved — no damage` : `<strong class="damage">${dmg}</strong> ${aoeDmgType} → <strong>${r.name}</strong>`}`, "damage");
     }
   });
+
+  for (const ws of wsOverflowTargets3) {
+    logCombat(`🐾 <strong>${ws.char._wildShapeForm}</strong> form broken! (${ws.overflow > 0 ? ws.overflow + " overflow" : "no overflow"})`, "spell");
+    await wildShapeRevertWithOverflow(ws.tokenId, ws.char, ws.overflow);
+  }
 
   await syncInitiativeHP();
   await broadcastSfx("damage");
@@ -4537,37 +4664,57 @@ async function resolveDamage(result) {
     if (absorbed > 0) logCombat(`Temp HP absorbs ${absorbed} damage`, "info");
   }
 
-  const newCurrent = Math.max(0, targetData.hp.current - remaining);
-  const isDown = newCurrent === 0;
+  let newCurrent = Math.max(0, targetData.hp.current - remaining);
+  let isDown = newCurrent === 0;
+
+  // Wild Shape overflow: if beast HP drops to 0, excess damage carries to original form
+  let wsReverted = false;
+  if (isDown && targetData._wildShapeOriginal) {
+    const overflow = remaining - targetData.hp.current; // excess beyond beast HP
+    logCombat(`🐾 <strong>${targetData._wildShapeForm}</strong> form broken! (${overflow > 0 ? overflow + " overflow damage" : "no overflow"})`, "spell");
+    await wildShapeRevertWithOverflow(targetTokenId, targetData, Math.max(0, overflow));
+    newCurrent = targetData.hp.current;
+    isDown = newCurrent === 0;
+    wsReverted = true;
+    newTemp = targetData.hp.temp || 0;
+  }
 
   logCombat(
     `<strong class="damage">${damage} damage</strong> → ${targetName}: ` +
-    `<strong>${targetData.hp.current}</strong> → <strong class="${isDown ? "miss" : ""}">${newCurrent}</strong>/${targetData.hp.max} HP` +
+    (wsReverted
+      ? `<strong>Wild Shape broken</strong> → <strong class="${isDown ? "miss" : ""}">${newCurrent}</strong>/${targetData.hp.max} HP`
+      : `<strong>${targetData.hp.current}</strong> → <strong class="${isDown ? "miss" : ""}">${newCurrent}</strong>/${targetData.hp.max} HP`) +
     (isDown ? ` — <strong class="miss">DOWN!</strong>` : ""),
     "damage"
   );
 
-  await OBR.scene.items.updateItems([targetTokenId], (items) => {
-    for (const item of items) {
-      const meta = item.metadata[METADATA_KEY];
-      if (!meta?.character) return;
-      meta.character.hp.current = newCurrent;
-      meta.character.hp.temp = newTemp;
-      meta.lastUpdated = Date.now();
-    }
-  });
+  if (!wsReverted) {
+    await OBR.scene.items.updateItems([targetTokenId], (items) => {
+      for (const item of items) {
+        const meta = item.metadata[METADATA_KEY];
+        if (!meta?.character) return;
+        meta.character.hp.current = newCurrent;
+        meta.character.hp.temp = newTemp;
+        meta.lastUpdated = Date.now();
+      }
+    });
+  }
 
   // Sync initiative tracker HP
   await syncInitiativeHP();
 
   const notifMsg = isDown
     ? `${attackerData.name} deals ${damage} damage — ${targetName} is DOWN!`
-    : `${attackerData.name} deals ${damage} damage to ${targetName} (${newCurrent}/${targetData.hp.max} HP)`;
-  await OBR.notification.show(notifMsg, isDown ? "ERROR" : "SUCCESS");
+    : wsReverted
+      ? `${attackerData.name} deals ${damage} damage — Wild Shape broken! (${newCurrent}/${targetData.hp.max} HP)`
+      : `${attackerData.name} deals ${damage} damage to ${targetName} (${newCurrent}/${targetData.hp.max} HP)`;
+  await OBR.notification.show(notifMsg, isDown ? "ERROR" : wsReverted ? "WARNING" : "SUCCESS");
 
   showCombatOverlay(
     `${damage} Damage!`,
-    isDown ? `${targetName} falls to 0 HP!` : `${targetName}: ${newCurrent}/${targetData.hp.max} HP remaining`
+    isDown ? `${targetName} falls to 0 HP!`
+      : wsReverted ? `Wild Shape broken! ${targetName}: ${newCurrent}/${targetData.hp.max} HP`
+      : `${targetName}: ${newCurrent}/${targetData.hp.max} HP remaining`
   );
 
   const isCrit = attackRollResult?.natValue === 20;
@@ -4951,7 +5098,8 @@ async function rollDice(notation, label, modifier = 0, rollId = null, condFx = n
 
 function showHotbar(char) {
   const classInfo = char.classes?.map((c) => c.name).join("/") || char.race || "";
-  tokenNameEl.textContent = `${char.name} — Lv.${char.level} ${classInfo}`;
+  const wsLabel = char._wildShapeForm ? ` 🐾 ${char._wildShapeForm}` : "";
+  tokenNameEl.textContent = `${char.name} — Lv.${char.level} ${classInfo}${wsLabel}`;
 
   const hpPct = Math.max(0, (char.hp.current / char.hp.max) * 100);
   let hpColor = "#45e9a0";
