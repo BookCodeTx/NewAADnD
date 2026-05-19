@@ -201,6 +201,31 @@ export const CONDITIONS = {
     tags: ["+1d6 dmg", "track adv"],
     extraDamage: "1d6",
   },
+
+  // ── Cunning Action States ──
+  dashing: {
+    name: "Dashing",
+    icon: "💨",
+    color: "#44ccdd",
+    effect: "Speed doubled this turn (Cunning Action: Dash)",
+    tags: ["x2 speed"],
+  },
+  disengaging: {
+    name: "Disengaging",
+    icon: "🛡️",
+    color: "#55aa88",
+    effect: "Movement doesn't provoke opportunity attacks this turn",
+    tags: ["no OA"],
+  },
+  hidden: {
+    name: "Hidden",
+    icon: "👻",
+    color: "#8866aa",
+    effect: "Unseen. Advantage on next attack. Attacks against have disadvantage",
+    tags: ["atk adv", "grant disadv"],
+    attackAdvantage: true,
+    grantDisadvantage: true,
+  },
 };
 
 // ── Tag color mapping ──

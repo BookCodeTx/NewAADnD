@@ -205,6 +205,32 @@ function parseBonusActions(d, classes, weapons) {
       const rawDesc = a.snippet || a.description || "";
       const description = rawDesc.replace(/<[^>]+>/g, "").replace(/&[a-z]+;/g, " ").trim().substring(0, 200);
 
+      // Detect Cunning Action — expand into sub-options (Dash, Disengage, Hide)
+      if (a.name?.toLowerCase().includes("cunning action")) {
+        actions.push({
+          key: "cunning-action-dash",
+          name: "Cunning Action: Dash",
+          description: "Double your speed for this turn",
+          type: "cunning-action",
+          subAction: "dash",
+        });
+        actions.push({
+          key: "cunning-action-disengage",
+          name: "Cunning Action: Disengage",
+          description: "Your movement doesn't provoke opportunity attacks this turn",
+          type: "cunning-action",
+          subAction: "disengage",
+        });
+        actions.push({
+          key: "cunning-action-hide",
+          name: "Cunning Action: Hide",
+          description: "Make a Stealth check to become hidden",
+          type: "cunning-action",
+          subAction: "hide",
+        });
+        continue;
+      }
+
       // Determine action type
       let type = "other";
       if (a.attackSubtype) type = "attack";

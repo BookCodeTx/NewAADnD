@@ -1022,11 +1022,12 @@ function buildBonusGrid() {
   const actions = currentCharData?.bonusActions || [];
   if (actions.length === 0) { bonusGrid.innerHTML = '<div style="color:#8899aa;font-size:10px;text-align:center;padding:8px">No bonus actions available</div>'; return; }
 
-  const typeIcons = { attack: "⚔️", spell: "🔮", movement: "💨", defense: "🛡️", support: "🎵", heal: "💚", item: "🧪", damage: "💥", other: "⚡" };
+  const typeIcons = { attack: "⚔️", spell: "🔮", movement: "💨", defense: "🛡️", support: "🎵", heal: "💚", item: "🧪", damage: "💥", other: "⚡", "cunning-action": "🗡️" };
+  const cunningIcons = { dash: "💨", disengage: "🛡️", hide: "👻" };
   for (const a of actions) {
     const card = document.createElement("div");
     card.className = "bonus-card";
-    const icon = typeIcons[a.type] || "⚡";
+    const icon = a.type === "cunning-action" ? (cunningIcons[a.subAction] || "🗡️") : (typeIcons[a.type] || "⚡");
     const diceTag = a.dice ? `<span class="bonus-dice">${a.dice}</span>` : "";
     card.innerHTML = `<div class="bonus-name">${icon} ${a.name}${diceTag}</div><div class="bonus-desc">${a.description}</div>`;
     card.addEventListener("click", () => onBonusSelected(a));
@@ -2571,6 +2572,10 @@ async function onBonusSelected(action) {
     } else {
       await OBR.notification.show(`${currentCharData.name}: ${action.name} declared`, "INFO");
     }
+  } else if (action.type === "cunning-action") {
+    // Cunning Action: Dash, Disengage, or Hide
+    await handleCunningAction(action.subAction);
+    return;
   } else if (action.type === "skill" && action.skill) {
     const skill = currentCharData.skills?.find((s) => s.key === action.skill);
     if (skill) await rollDice("1d20", `${currentCharData.name} ${action.name}`, skill.modifier);
@@ -2586,6 +2591,70 @@ async function onBonusSelected(action) {
 }
 
 bonusCancel.addEventListener("click", hideBonusPicker);
+
+// ── Cunning Action handler ──
+async function handleCunningAction(subAction) {
+  if (!currentCharData || !currentTokenId) return;
+  const charName = currentCharData.name;
+
+  // Remove any previous cunning action conditions (they're mutually exclusive, one per turn)
+  const cunningConds = ["dashing", "disengaging", "hidden"];
+  currentConditions = currentConditions.filter(c => !cunningConds.includes(c));
+
+  switch (subAction) {
+    case "dash": {
+      const baseSpeed = currentCharData.speed || 30;
+      currentConditions.push("dashing");
+      logCombat(`💨 <strong>${charName}</strong> uses <strong>Cunning Action: Dash</strong> — speed doubled to <strong>${baseSpeed * 2}ft</strong> this turn!`, "info");
+      await OBR.notification.show(`${charName}: Dash! Speed ${baseSpeed * 2}ft`, "SUCCESS");
+      break;
+    }
+    case "disengage": {
+      currentConditions.push("disengaging");
+      logCombat(`🛡️ <strong>${charName}</strong> uses <strong>Cunning Action: Disengage</strong> — no opportunity attacks this turn`, "info");
+      await OBR.notification.show(`${charName}: Disengage! No opportunity attacks`, "SUCCESS");
+      break;
+    }
+    case "hide": {
+      // Roll Stealth check
+      const stealth = currentCharData.skills?.find(s => s.key === "stealth");
+      const stealthMod = stealth?.modifier ?? 0;
+      const roll = Math.floor(Math.random() * 20) + 1;
+      const total = roll + stealthMod;
+      const nat20 = roll === 20;
+      const nat1 = roll === 1;
+
+      currentConditions.push("hidden");
+      logCombat(
+        `👻 <strong>${charName}</strong> uses <strong>Cunning Action: Hide</strong> — ` +
+        `Stealth: <strong>${roll}</strong>${fmtMod(stealthMod)}=<strong>${total}</strong>` +
+        (nat20 ? ` <strong class="crit">NAT 20!</strong>` : nat1 ? ` <strong class="miss">NAT 1!</strong>` : "") +
+        ` — <strong>Hidden</strong> (DC ${total} to detect)`,
+        nat20 ? "crit" : nat1 ? "miss" : "hit"
+      );
+      await OBR.notification.show(`${charName}: Hide! Stealth ${total} (${roll}${fmtMod(stealthMod)})`, "SUCCESS");
+
+      // Also try 3D dice if available
+      if (typeof diceBox !== "undefined" && diceBox && typeof diceReady !== "undefined" && diceReady) {
+        try {
+          show3DOverlay(`${charName} Stealth Check`);
+          await diceBox.roll("1d20", { themeColor: "#8866aa" });
+          await new Promise(r => setTimeout(r, 800));
+          hide3DOverlay();
+        } catch { /* fallback already logged */ }
+      }
+      break;
+    }
+  }
+
+  // Save conditions to OBR metadata
+  await OBR.scene.items.updateItems([currentTokenId], (items) => {
+    for (const item of items) {
+      item.metadata[COND_METADATA_KEY] = [...currentConditions];
+    }
+  });
+  renderConditionBadges();
+}
 
 function hideOtherPickers(except) {
   if (except !== "spell") spellPicker.classList.remove("visible");
@@ -4733,6 +4802,18 @@ async function resolveAttackRoll(result) {
   const targetName = targetData?.name || "Target";
   const isCrit = natValue === 20;
   const isMiss = natValue === 1 || (!isCrit && natValue === 0);
+
+  // Auto-remove "hidden" condition when attacking (attacking breaks stealth)
+  if (currentConditions.includes("hidden") && attackerTokenId === currentTokenId) {
+    currentConditions = currentConditions.filter(c => c !== "hidden");
+    await OBR.scene.items.updateItems([currentTokenId], (items) => {
+      for (const item of items) {
+        item.metadata[COND_METADATA_KEY] = [...currentConditions];
+      }
+    });
+    renderConditionBadges();
+    logCombat(`👻 <strong>${attackerData?.name}</strong> is no longer <strong>Hidden</strong> (attacked)`, "info");
+  }
 
   if (isMiss) {
     // ── Graze mastery: on miss (not nat 1), deal ability mod damage ──
