@@ -1,5 +1,18 @@
-// Grid: 150 DPI = 1 square = 5ft → 1ft = 30 DPI units
-export const DPI_PER_FOOT = 30;
+import OBR from "@owlbear-rodeo/sdk";
+
+// Grid DPI: read dynamically from OBR scene, fallback to 150dpi/5ft = 30
+export let DPI_PER_FOOT = 30;
+
+export async function updateGridDpi() {
+  try {
+    const dpi = await OBR.scene.grid.getDpi();
+    const scale = await OBR.scene.grid.getScale();
+    const ftPerCell = scale?.parsed?.multiplier || 5;
+    DPI_PER_FOOT = dpi / ftPerCell;
+  } catch {
+    DPI_PER_FOOT = 30; // fallback
+  }
+}
 
 export const SPELLS = {
   fireball: {
@@ -107,7 +120,9 @@ export function getSaveMod(char, ability) {
 }
 
 export function tokensInRadius(centerPos, radiusFt, tokens) {
-  const radiusDPI = radiusFt * DPI_PER_FOOT;
+  // Add half-cell tolerance (tokens snap to grid center, so ±half cell is acceptable)
+  const tolerance = DPI_PER_FOOT * 2.5; // half of a 5ft cell
+  const radiusDPI = radiusFt * DPI_PER_FOOT + tolerance;
   return tokens.filter((t) => {
     const dx = t.position.x - centerPos.x;
     const dy = t.position.y - centerPos.y;

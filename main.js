@@ -1,7 +1,7 @@
 import OBR, { buildText } from "@owlbear-rodeo/sdk";
 import DiceBox from "@3d-dice/dice-box";
 import "@3d-dice/dice-box/dist/style.css";
-import { SPELLS, getSpellcastingDC, getSaveMod, tokensInRadius, rollSave, parseDamageNotation, DPI_PER_FOOT } from "./spells.js";
+import { SPELLS, getSpellcastingDC, getSaveMod, tokensInRadius, rollSave, parseDamageNotation, DPI_PER_FOOT, updateGridDpi } from "./spells.js";
 import { CONDITIONS, getConditionPenalty, shouldAutoFailSave, getAttackerConditionEffects, getTargetConditionEffects, getSaveConditionEffects, getCheckConditionEffects, isIncapacitated, getMeleeDamageBonus, getTagColor } from "./conditions.js";
 import { playSfx } from "./sfx.js";
 import { playHitEffect, playCritEffect, playMissEffect, playHealEffect, playSpellEffect, screenShake, getDiceColor } from "./effects.js";
@@ -2200,9 +2200,17 @@ async function castAoeSpell(centerToken) {
 
   showCombatOverlay(`${spell.name} — DC ${dc}`, "Finding targets in radius...");
 
+  // Re-read grid DPI in case scene changed
+  await updateGridDpi();
+
   const allItems = await OBR.scene.items.getItems((item) => item.layer === "CHARACTER");
   const centerPos = centerToken.position;
   const inRadius = tokensInRadius(centerPos, spell.aoeRadius, allItems.filter((i) => i.id !== attackerTokenId));
+
+  // Ensure center target is always included in AoE
+  if (!inRadius.find(t => t.id === centerToken.id)) {
+    inRadius.push(centerToken);
+  }
 
   if (inRadius.length === 0) {
     logCombat(`<strong>${spell.name}</strong>: No targets in ${spell.aoeRadius}ft radius`, "spell");
@@ -2211,7 +2219,7 @@ async function castAoeSpell(centerToken) {
     return;
   }
 
-  logCombat(`<strong>${spell.name}</strong> — DC ${dc} ${spell.save} Save`, "spell");
+  logCombat(`<strong>${spell.name}</strong> — DC ${dc} ${spell.save} Save (${inRadius.length} targets)`, "spell");
 
   const saveResults = [];
 
@@ -3683,6 +3691,8 @@ OBR.onReady(async () => {
 
 // ── Selection listener ──
 function setupListeners() {
+  // Read actual grid DPI/scale from scene
+  updateGridDpi();
   OBR.player.onChange(handleSelectionChange);
   handleSelectionChange();
 
@@ -4016,6 +4026,9 @@ async function castComboAoE(centerTokenId) {
 
   showCombatOverlay(`${spell.name} — Explosion!`, `${aoeRadius}ft ${spell.save} Save DC ${dc}...`);
   logCombat(`💥 <strong>${spell.name}</strong> explodes! ${aoeRadius}ft radius — DC ${dc} ${spell.save} Save`, "spell");
+
+  // Re-read grid DPI in case scene changed
+  await updateGridDpi();
 
   // Find all tokens in radius (including the original target)
   const allItems = await OBR.scene.items.getItems((item) => item.layer === "CHARACTER");
