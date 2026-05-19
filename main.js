@@ -79,6 +79,17 @@ const featuresPanel = document.getElementById("features-panel");
 const featList = document.getElementById("feat-list");
 const featClose = document.getElementById("feat-close");
 
+// Lay On Hands panel
+const lohPanel = document.getElementById("loh-panel");
+const lohSlider = document.getElementById("loh-slider");
+const lohAmount = document.getElementById("loh-amount");
+const lohTarget = document.getElementById("loh-target");
+const lohPoolDisplay = document.getElementById("loh-pool-display");
+const lohPoolMax = document.getElementById("loh-pool-max");
+const lohHealBtn = document.getElementById("loh-heal-btn");
+const lohCureBtn = document.getElementById("loh-cure-btn");
+const lohCancelBtn = document.getElementById("loh-cancel-btn");
+
 // AoE results
 const aoeResults = document.getElementById("aoe-results");
 const aoeTitle = document.getElementById("aoe-title");
@@ -1279,10 +1290,11 @@ function buildFeaturesList() {
 
     // Use button — show for any feature with limited uses OR an activation type
     let btnHTML = "";
+    const btnLabel = feat.isLayOnHands ? "🙌 Heal" : "Use";
     if (feat.maxUses !== null) {
-      btnHTML = `<button class="feat-use-btn" data-feat-key="${feat.key}" ${feat.remaining <= 0 ? "disabled" : ""}>Use</button>`;
+      btnHTML = `<button class="feat-use-btn" data-feat-key="${feat.key}" ${feat.remaining <= 0 ? "disabled" : ""}>${btnLabel}</button>`;
     } else if (feat.activationType) {
-      btnHTML = `<button class="feat-use-btn" data-feat-key="${feat.key}">Use</button>`;
+      btnHTML = `<button class="feat-use-btn" data-feat-key="${feat.key}">${btnLabel}</button>`;
     }
 
     el.innerHTML = `
@@ -1342,6 +1354,12 @@ featList?.addEventListener("click", async (e) => {
   const feat = char.features.find(f => f.key === key);
   if (!feat) return;
 
+  // Lay On Hands — open special healing panel instead of generic use
+  if (feat.isLayOnHands) {
+    await openLayOnHandsPanel(feat);
+    return;
+  }
+
   // Decrement uses if has limited uses
   if (feat.maxUses !== null) {
     if (feat.remaining <= 0) {
@@ -1399,6 +1417,247 @@ featList?.addEventListener("click", async (e) => {
   // Rebuild the list to update pips
   buildFeaturesList();
 });
+
+// ════════════════════════════════════════
+// LAY ON HANDS PANEL
+// ════════════════════════════════════════
+
+let lohActiveFeat = null; // reference to the feat object while panel is open
+
+async function openLayOnHandsPanel(feat) {
+  if (!feat || !currentCharData) return;
+  lohActiveFeat = feat;
+
+  const poolRemaining = feat.remaining || 0;
+  const poolMax = feat.maxUses || 0;
+
+  // Update pool display
+  lohPoolDisplay.textContent = poolRemaining;
+  lohPoolMax.textContent = poolMax;
+
+  // Setup slider & input
+  const maxHeal = Math.max(1, poolRemaining);
+  lohSlider.min = 1;
+  lohSlider.max = maxHeal;
+  lohSlider.value = Math.min(maxHeal, 5);
+  lohAmount.min = 1;
+  lohAmount.max = maxHeal;
+  lohAmount.value = Math.min(maxHeal, 5);
+
+  // Cure Poison button state (costs 5 HP from pool)
+  lohCureBtn.disabled = poolRemaining < 5;
+  lohHealBtn.disabled = poolRemaining <= 0;
+
+  // Populate target dropdown with all CHARACTER tokens on the map
+  await populateLohTargets();
+
+  // Show panel
+  lohPanel.classList.add("visible");
+  hideOtherPickers("loh");
+}
+
+function hideLayOnHandsPanel() {
+  lohPanel.classList.remove("visible");
+  lohActiveFeat = null;
+}
+
+async function populateLohTargets() {
+  lohTarget.innerHTML = "";
+
+  // Self option first
+  if (currentCharData) {
+    const opt = document.createElement("option");
+    opt.value = currentTokenId;
+    const selfHp = currentCharData.hp;
+    opt.textContent = `${currentCharData.name} (self) — ${selfHp.current}/${selfHp.max} HP`;
+    lohTarget.appendChild(opt);
+  }
+
+  // All other character tokens on the map
+  try {
+    const allItems = await OBR.scene.items.getItems((item) => item.layer === "CHARACTER");
+    for (const item of allItems) {
+      if (item.id === currentTokenId) continue; // skip self (already added)
+      const meta = item.metadata?.[METADATA_KEY];
+      const charData = meta?.character;
+      if (!charData?.name) continue;
+
+      const opt = document.createElement("option");
+      opt.value = item.id;
+      const hp = charData.hp || {};
+      opt.textContent = `${charData.name} — ${hp.current ?? "?"}/${hp.max ?? "?"} HP`;
+      lohTarget.appendChild(opt);
+    }
+  } catch { /* fallback: just self */ }
+}
+
+// Sync slider ↔ input
+lohSlider?.addEventListener("input", () => { lohAmount.value = lohSlider.value; });
+lohAmount?.addEventListener("input", () => {
+  const max = parseInt(lohAmount.max) || 1;
+  let v = parseInt(lohAmount.value) || 1;
+  v = Math.max(1, Math.min(v, max));
+  lohAmount.value = v;
+  lohSlider.value = v;
+});
+
+// Heal button
+lohHealBtn?.addEventListener("click", async () => {
+  if (!lohActiveFeat || !currentCharData || !currentTokenId) return;
+  const amount = parseInt(lohAmount.value) || 0;
+  if (amount <= 0) return;
+
+  const poolRemaining = lohActiveFeat.remaining || 0;
+  if (amount > poolRemaining) {
+    await OBR.notification.show(`Not enough healing pool! (${poolRemaining} remaining)`, "WARNING");
+    return;
+  }
+
+  const targetId = lohTarget.value;
+  if (!targetId) return;
+
+  // Deduct from pool
+  lohActiveFeat.remaining = Math.max(0, poolRemaining - amount);
+  lohActiveFeat.usedCount = (lohActiveFeat.usedCount || 0) + amount;
+
+  // Save pool to OBR metadata (caster's token)
+  const featKey = lohActiveFeat.key;
+  await OBR.scene.items.updateItems([currentTokenId], (items) => {
+    for (const item of items) {
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta?.character?.features) return;
+      const f = meta.character.features.find(ff => ff.key === featKey);
+      if (f) {
+        f.remaining = lohActiveFeat.remaining;
+        f.usedCount = lohActiveFeat.usedCount;
+      }
+      meta.lastUpdated = Date.now();
+    }
+  });
+  currentCharData._lastUpdated = Date.now();
+
+  // Apply healing to target
+  if (targetId === currentTokenId) {
+    // Heal self
+    const hp = currentCharData.hp;
+    const newCurrent = Math.min(hp.max, hp.current + amount);
+    await applyHpChange(newCurrent, null, null, `Lay On Hands +${amount}`);
+  } else {
+    // Heal other token
+    await applyLohHealToTarget(targetId, amount);
+  }
+
+  logCombat(`🙌 <strong>${currentCharData.name}</strong> uses <strong>Lay On Hands</strong>: heals <strong>${amount} HP</strong> (${lohActiveFeat.remaining}/${lohActiveFeat.maxUses} pool remaining)`, "info");
+  await OBR.notification.show(`Lay On Hands: healed ${amount} HP! (${lohActiveFeat.remaining} pool left)`, "SUCCESS");
+
+  hideLayOnHandsPanel();
+  buildFeaturesList(); // refresh pips
+});
+
+// Cure Poison button (costs 5 from pool, doesn't restore HP)
+lohCureBtn?.addEventListener("click", async () => {
+  if (!lohActiveFeat || !currentCharData || !currentTokenId) return;
+
+  const poolRemaining = lohActiveFeat.remaining || 0;
+  if (poolRemaining < 5) {
+    await OBR.notification.show("Need at least 5 HP in pool to cure Poisoned!", "WARNING");
+    return;
+  }
+
+  const targetId = lohTarget.value;
+  if (!targetId) return;
+
+  // Deduct 5 from pool
+  lohActiveFeat.remaining = Math.max(0, poolRemaining - 5);
+  lohActiveFeat.usedCount = (lohActiveFeat.usedCount || 0) + 5;
+
+  // Save pool to OBR metadata
+  const featKey = lohActiveFeat.key;
+  await OBR.scene.items.updateItems([currentTokenId], (items) => {
+    for (const item of items) {
+      const meta = item.metadata[METADATA_KEY];
+      if (!meta?.character?.features) return;
+      const f = meta.character.features.find(ff => ff.key === featKey);
+      if (f) {
+        f.remaining = lohActiveFeat.remaining;
+        f.usedCount = lohActiveFeat.usedCount;
+      }
+      meta.lastUpdated = Date.now();
+    }
+  });
+  currentCharData._lastUpdated = Date.now();
+
+  // Remove Poisoned condition from target
+  if (targetId === currentTokenId) {
+    // Remove from self
+    const idx = currentConditions.indexOf("poisoned");
+    if (idx !== -1) {
+      currentConditions.splice(idx, 1);
+      await OBR.scene.items.updateItems([currentTokenId], (items) => {
+        for (const item of items) {
+          item.metadata[COND_METADATA_KEY] = [...currentConditions];
+        }
+      });
+      renderConditionBadges();
+    }
+  } else {
+    // Remove Poisoned from other token
+    await OBR.scene.items.updateItems([targetId], (items) => {
+      for (const item of items) {
+        const conds = item.metadata?.[COND_METADATA_KEY] || [];
+        const idx = conds.indexOf("poisoned");
+        if (idx !== -1) {
+          conds.splice(idx, 1);
+          item.metadata[COND_METADATA_KEY] = [...conds];
+        }
+      }
+    });
+  }
+
+  // Get target name for log
+  let targetName = currentCharData.name;
+  if (targetId !== currentTokenId) {
+    try {
+      const items = await OBR.scene.items.getItems([targetId]);
+      targetName = items[0]?.metadata?.[METADATA_KEY]?.character?.name || items[0]?.name || "target";
+    } catch { targetName = "target"; }
+  }
+
+  logCombat(`🙌 <strong>${currentCharData.name}</strong> uses <strong>Lay On Hands</strong>: cured <strong>Poisoned</strong> on <strong>${targetName}</strong> (−5 pool, ${lohActiveFeat.remaining}/${lohActiveFeat.maxUses} remaining)`, "info");
+  await OBR.notification.show(`Lay On Hands: cured Poisoned! (${lohActiveFeat.remaining} pool left)`, "SUCCESS");
+
+  hideLayOnHandsPanel();
+  buildFeaturesList();
+});
+
+// Cancel button
+lohCancelBtn?.addEventListener("click", hideLayOnHandsPanel);
+
+// Helper: apply healing to another token
+async function applyLohHealToTarget(targetId, amount) {
+  let targetName = "target";
+  await OBR.scene.items.updateItems([targetId], (items) => {
+    for (const item of items) {
+      const meta = item.metadata?.[METADATA_KEY];
+      if (!meta?.character) return;
+      const hp = meta.character.hp;
+      const oldCurrent = hp.current;
+      hp.current = Math.min(hp.max, hp.current + amount);
+      targetName = meta.character.name || "target";
+      meta.lastUpdated = Date.now();
+
+      // Remove skull if healed from 0
+      if (oldCurrent === 0 && hp.current > 0) {
+        removeSkullFromToken(targetId);
+      }
+    }
+  });
+
+  // Visual effects on target
+  await showFloatingDamage(targetId, amount, null, { isHeal: true });
+  await broadcastSfx("heal");
+  playHealEffect();
+}
 
 // ── Features Backup / Restore ──
 const FEAT_BACKUP_PREFIX = "dnd-feat-backup:";
@@ -2187,6 +2446,7 @@ function hideOtherPickers(except) {
   if (except !== "features") featuresPanel.classList.remove("visible");
   if (except !== "token-save") tokenSavePanel.classList.remove("visible");
   if (except !== "wildshape") document.getElementById("wildshape-panel")?.classList.remove("visible");
+  if (except !== "loh") lohPanel?.classList.remove("visible");
 }
 
 // ════════════════════════════════════════
@@ -5253,7 +5513,7 @@ function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("
 function hideInventoryPanel() { inventoryPanel.classList.remove("visible"); }
 function hideTokenSavePanel() { tokenSavePanel.classList.remove("visible"); }
 function hideWildShapePanel() { document.getElementById("wildshape-panel").classList.remove("visible"); }
-function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); hideFeaturesPanel(); hideTokenSavePanel(); hideWildShapePanel(); currentTokenId = null; }
+function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); hideFeaturesPanel(); hideTokenSavePanel(); hideWildShapePanel(); hideLayOnHandsPanel(); currentTokenId = null; }
 
 function showLinkPanel(name) {
   linkStatus.textContent = `"${name}" has no character linked.`;

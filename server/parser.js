@@ -770,6 +770,9 @@ function parseFeatures(d, stats, profBonus, classes) {
     const snippet = a.snippet || a.description || "";
     const description = cleanDescription(snippet, maxUses, profBonus);
 
+    // Detect Lay On Hands — pool-based healing (each "use" = 1 HP from pool)
+    const isLayOnHands = a.name.toLowerCase().includes("lay on hands");
+
     features.push({
       key: a.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
       name: a.name,
@@ -786,6 +789,8 @@ function parseFeatures(d, stats, profBonus, classes) {
       damageType: a.damageTypeId ? null : null, // could map IDs but skip for now
       saveStat: a.saveStatId ? (["", "STR", "DEX", "CON", "INT", "WIS", "CHA"][a.saveStatId] || null) : null,
       dice: a.dice?.diceString || null,
+      // Special: Lay On Hands pool-based healing
+      isLayOnHands,
     });
   }
 

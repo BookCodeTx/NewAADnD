@@ -492,6 +492,31 @@
     .feat-close { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #e9704544; border-radius: 4px; background: none; color: #e97045; font-size: 10px; cursor: pointer; }
     .feat-close:hover { background: #e9704522; }
 
+    /* ═══ LAY ON HANDS PANEL ═══ */
+    #loh-panel { display: none; width: 100%; max-width: 500px; padding: 10px; background: linear-gradient(180deg, #0a1a18, #081410); border: 2px solid #45e9a0; border-radius: 10px; margin-top: 6px; }
+    #loh-panel.visible { display: block; animation: dice-pop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+    .loh-title { color: #45e9a0; font-size: 13px; font-weight: 700; text-align: center; margin-bottom: 8px; letter-spacing: 0.5px; }
+    .loh-pool { text-align: center; margin-bottom: 10px; font-size: 11px; color: #88ccaa; }
+    .loh-pool strong { color: #45e9a0; font-size: 16px; }
+    .loh-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .loh-label { font-size: 10px; color: #88aa99; white-space: nowrap; min-width: 55px; }
+    .loh-input { flex: 1; padding: 5px 8px; border: 1px solid #45e9a044; border-radius: 6px; background: #0a0f0d; color: #fff; font-size: 13px; text-align: center; outline: none; }
+    .loh-input:focus { border-color: #45e9a0; box-shadow: 0 0 6px #45e9a033; }
+    .loh-slider { flex: 1; -webkit-appearance: none; height: 6px; border-radius: 3px; background: #1a2a24; outline: none; }
+    .loh-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #45e9a0; cursor: pointer; box-shadow: 0 0 6px #45e9a066; }
+    .loh-select { flex: 1; padding: 5px 8px; border: 1px solid #45e9a044; border-radius: 6px; background: #0a0f0d; color: #fff; font-size: 11px; outline: none; }
+    .loh-select:focus { border-color: #45e9a0; }
+    .loh-btns { display: flex; gap: 6px; margin-top: 10px; }
+    .loh-btn { flex: 1; padding: 7px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+    .loh-btn.heal { border: 1px solid #45e9a0; background: #45e9a022; color: #45e9a0; }
+    .loh-btn.heal:hover { background: #45e9a0; color: #000; }
+    .loh-btn.heal:disabled { opacity: 0.3; cursor: not-allowed; }
+    .loh-btn.cure { border: 1px solid #a855f7; background: #a855f722; color: #a855f7; }
+    .loh-btn.cure:hover { background: #a855f7; color: #fff; }
+    .loh-btn.cure:disabled { opacity: 0.3; cursor: not-allowed; }
+    .loh-btn.cancel { border: 1px solid #ffffff22; background: none; color: #888; }
+    .loh-btn.cancel:hover { background: #ffffff11; color: #ccc; }
+
     /* ═══ AoE RESULTS ═══ */
     #aoe-results { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1028, #16102e); border: 2px solid #e94560; border-radius: 10px; margin-top: 6px; max-height: 200px; overflow-y: auto; }
     #aoe-results.visible { display: block; }
@@ -880,6 +905,26 @@
         <span class="feat-backup-info" id="feat-backup-info"></span>
       </div>
       <button class="feat-close" id="feat-close">Close</button>
+    </div>
+
+    <!-- Lay On Hands Panel -->
+    <div id="loh-panel">
+      <div class="loh-title">🙌 Lay On Hands</div>
+      <div class="loh-pool">Pool: <strong id="loh-pool-display">0</strong> / <span id="loh-pool-max">0</span> HP</div>
+      <div class="loh-row">
+        <span class="loh-label">Amount</span>
+        <input type="range" class="loh-slider" id="loh-slider" min="1" max="10" value="1">
+        <input type="number" class="loh-input" id="loh-amount" min="1" max="10" value="1" style="max-width:60px">
+      </div>
+      <div class="loh-row">
+        <span class="loh-label">Target</span>
+        <select class="loh-select" id="loh-target"></select>
+      </div>
+      <div class="loh-btns">
+        <button class="loh-btn heal" id="loh-heal-btn">💚 Heal</button>
+        <button class="loh-btn cure" id="loh-cure-btn">🧪 Cure Poison (5 HP)</button>
+        <button class="loh-btn cancel" id="loh-cancel-btn">Cancel</button>
+      </div>
     </div>
 
     <!-- AoE Results -->
