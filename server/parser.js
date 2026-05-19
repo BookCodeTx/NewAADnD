@@ -1101,6 +1101,32 @@ function parseSpells(d, stats, profBonus) {
       // For healing spells, store healing dice separately
       const healing = isHealing ? (damage || null) : null;
 
+      // ── Upcast scaling: extra dice per slot level above base ──
+      // Track which part scales: "damage" (main/attack), "aoe" (AoE part), or "healing"
+      let upcastDice = null;
+      let upcastTarget = "damage"; // which field to scale
+      if (level > 0) {
+        for (const mod of modifiers) {
+          const hlDefs = mod.atHigherLevels?.higherLevelDefinitions;
+          if (hlDefs && hlDefs.length > 0 && (mod.type === "damage" || mod.type === "bonus")) {
+            const scaleEntry = hlDefs[0];
+            if (scaleEntry.dice?.diceString) {
+              upcastDice = scaleEntry.dice.diceString; // e.g. "1d6" per level
+              // Determine which damage part this scales
+              const modSubType = (mod.subType || "").toLowerCase();
+              if (mod.type === "bonus" && mod.subType === "hit-points") {
+                upcastTarget = "healing";
+              } else if (aoeDamageType && modSubType === aoeDamageType.toLowerCase()) {
+                upcastTarget = "aoe";
+              } else {
+                upcastTarget = "damage";
+              }
+              break;
+            }
+          }
+        }
+      }
+
       const parsed = {
         key: spellKey,
         name: def.name,
@@ -1127,6 +1153,8 @@ function parseSpells(d, stats, profBonus) {
         activationType,
         prepared: level === 0 || spell.prepared || spell.alwaysPrepared || isFeatureGranted || false,
         spellDC,
+        upcastDice,
+        upcastTarget, // "damage", "aoe", or "healing"
       };
 
       spellList.push(parsed);

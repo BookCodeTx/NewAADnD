@@ -280,6 +280,16 @@
     .slot-count { color: #9977bb; font-size: 9px; font-weight: 600; }
     .spell-cancel { width: 100%; margin-top: 6px; padding: 4px; border: 1px solid #a045e944; border-radius: 4px; background: none; color: #a045e9; font-size: 10px; cursor: pointer; }
     .spell-cancel:hover { background: #a045e922; }
+    .upcast-title { color: #e9c645; font-size: 11px; font-weight: 700; text-align: center; margin: 8px 0 6px; letter-spacing: 0.5px; }
+    .upcast-slots { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+    .upcast-slot-btn { padding: 6px 12px; border-radius: 6px; border: 1px solid #a045e944; background: #1a1028; color: #ccc; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; min-width: 60px; text-align: center; }
+    .upcast-slot-btn:hover { border-color: #e9c645; background: #e9c64522; color: #e9c645; }
+    .upcast-slot-btn.base { border-color: #a045e9; background: #a045e922; color: #a045e9; }
+    .upcast-slot-btn.upcast { border-color: #e9c64566; }
+    .upcast-slot-btn .upcast-extra { display: block; font-size: 8px; color: #e9c645; margin-top: 2px; }
+    .upcast-slot-btn .upcast-slots-left { display: block; font-size: 8px; color: #888; margin-top: 1px; }
+    .upcast-slot-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+    .upcast-slot-btn:disabled:hover { border-color: #a045e944; background: #1a1028; color: #ccc; }
 
     /* ═══ CONDITION PICKER ═══ */
     #condition-picker { display: none; width: 100%; max-width: 500px; padding: 8px; background: linear-gradient(180deg, #1a1020, #161020); border: 2px solid #ff66aa; border-radius: 10px; margin-top: 6px; }
@@ -828,6 +838,11 @@
     <div id="spell-picker">
       <div class="spell-picker-title">Select a Spell</div>
       <div class="spell-grid" id="spell-grid"></div>
+      <!-- Upcast slot picker (shown when spell has upcastDice) -->
+      <div id="upcast-picker" style="display:none">
+        <div class="upcast-title" id="upcast-title">Cast at Level</div>
+        <div class="upcast-slots" id="upcast-slots"></div>
+      </div>
       <button class="spell-cancel" id="spell-cancel">Cancel</button>
     </div>
 

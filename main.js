@@ -376,6 +376,7 @@ function buildSpellGrid() {
         const healMod = spell.healingMod ? `+${spell.healingMod}` : "";
         tags.push(`<span class="spell-tag heal">${spell.healing}${healMod} ❤️</span>`);
       } else if (spell.isHealing) tags.push(`<span class="spell-tag heal">Heal</span>`);
+      if (spell.upcastDice) tags.push(`<span class="spell-tag save">⬆️ +${spell.upcastDice}/lv</span>`);
       if (spell.concentration) tags.push(`<span class="spell-tag conc">Conc.</span>`);
       if (spell.ritual) tags.push(`<span class="spell-tag ritual">Ritual</span>`);
       if (spell.isSpecialAction && spell.usesMax > 0) {
@@ -408,6 +409,11 @@ function buildSpellGrid() {
 
       card.addEventListener("click", async () => {
         if (!isCombat) {
+          // Non-combat spells with upcast → show picker too (for healing scaling etc.)
+          if (spell.upcastDice && spell.level > 0 && currentCharData?.spellSlots) {
+            showUpcastPicker(spell, true); // true = non-combat mode
+            return;
+          }
           // Expend slot for non-cantrip non-combat spells
           if (spell.level > 0 && currentCharData?.spellSlots) {
             const slot = currentCharData.spellSlots.find(s => s.level === spell.level && s.remaining > 0);
@@ -438,7 +444,12 @@ function buildSpellGrid() {
           resetCombat();
           return;
         }
-        onSpellSelected(spell.key, spell);
+        // If spell can be upcast, show slot level picker
+        if (spell.upcastDice && spell.level > 0 && currentCharData?.spellSlots) {
+          showUpcastPicker(spell);
+        } else {
+          onSpellSelected(spell.key, spell);
+        }
       });
       spellGrid.appendChild(card);
     }
@@ -463,14 +474,132 @@ function buildSpellGrid() {
   }
 }
 
+// ── Upcast Slot Picker ──
+const upcastPicker = document.getElementById("upcast-picker");
+const upcastSlots = document.getElementById("upcast-slots");
+const upcastTitle = document.getElementById("upcast-title");
+
+function showUpcastPicker(spell, nonCombat = false) {
+  const spellSlots = currentCharData?.spellSlots || [];
+  const baseLevel = spell.level;
+
+  upcastTitle.textContent = `⬆️ ${spell.name} — Cast at Level`;
+  upcastSlots.innerHTML = "";
+
+  // Find the highest available slot level
+  const maxSlotLevel = Math.max(...spellSlots.map(s => s.level), 0);
+
+  for (let lvl = baseLevel; lvl <= maxSlotLevel; lvl++) {
+    const slot = spellSlots.find(s => s.level === lvl);
+    if (!slot) continue;
+
+    const btn = document.createElement("button");
+    btn.className = `upcast-slot-btn ${lvl === baseLevel ? "base" : "upcast"}`;
+    btn.disabled = slot.remaining <= 0;
+
+    const extraLevels = lvl - baseLevel;
+    let extraInfo = "";
+    if (extraLevels > 0 && spell.upcastDice) {
+      // Parse upcast dice to show total extra
+      const match = spell.upcastDice.match(/^(\d+)d(\d+)$/);
+      if (match) {
+        const totalCount = parseInt(match[1]) * extraLevels;
+        extraInfo = `<span class="upcast-extra">+${totalCount}d${match[2]}</span>`;
+      } else {
+        extraInfo = `<span class="upcast-extra">+${spell.upcastDice}×${extraLevels}</span>`;
+      }
+    }
+
+    btn.innerHTML = `Lv.${lvl}${extraInfo}<span class="upcast-slots-left">${slot.remaining}/${slot.max}</span>`;
+
+    btn.addEventListener("click", async () => {
+      upcastPicker.style.display = "none";
+      if (nonCombat) {
+        await castNonCombatUpcast(spell, lvl);
+      } else {
+        onSpellSelected(spell.key, spell, lvl);
+      }
+    });
+
+    upcastSlots.appendChild(btn);
+  }
+
+  upcastPicker.style.display = "block";
+}
+
+function hideUpcastPicker() {
+  if (upcastPicker) upcastPicker.style.display = "none";
+}
+
+// Non-combat upcast: expend slot + roll scaled healing/damage
+async function castNonCombatUpcast(spell, castLevel) {
+  const extraLevels = castLevel - spell.level;
+
+  // Expend the chosen slot level
+  const slot = currentCharData.spellSlots.find(s => s.level === castLevel && s.remaining > 0);
+  if (slot) {
+    slot.remaining--;
+    slot.used++;
+    await OBR.scene.items.updateItems([currentTokenId], (items) => {
+      for (const item of items) {
+        const meta = item.metadata[METADATA_KEY];
+        if (!meta?.character?.spellSlots) return;
+        const s = meta.character.spellSlots.find(sl => sl.level === castLevel);
+        if (s) { s.remaining = slot.remaining; s.used = slot.used; }
+        meta.lastUpdated = Date.now();
+      }
+    });
+    currentCharData._lastUpdated = Date.now();
+    const upcastLabel = extraLevels > 0 ? ` (upcast Lv.${castLevel})` : "";
+    logCombat(`🔮 Lv.${castLevel} spell slot expended${upcastLabel} (${slot.remaining}/${slot.max} remaining)`, "spell");
+  }
+
+  logCombat(`<strong>${currentCharData?.name}</strong> casts <strong>${spell.name}</strong>${extraLevels > 0 ? ` at Lv.${castLevel}` : ""}`, "spell");
+
+  // Scale damage/healing based on upcastTarget
+  const ncTarget = spell.upcastTarget || "damage";
+  const scaledDamage = scaleSpellDice(spell.damage, ncTarget === "damage" ? spell.upcastDice : null, extraLevels);
+  const scaledHealing = scaleSpellDice(spell.healing, ncTarget === "healing" ? spell.upcastDice : null, extraLevels);
+
+  if (scaledDamage && currentCharData) {
+    await rollDice(scaledDamage, `${currentCharData.name} ${spell.name} (${spell.damageType || "damage"})`, 0);
+  } else if (scaledHealing && currentCharData) {
+    await rollDice(scaledHealing, `${currentCharData.name} ${spell.name} (Healing)`, spell.healingMod || 0);
+  }
+
+  if (extraLevels > 0) {
+    logCombat(`⬆️ Upcast +${extraLevels} level${extraLevels > 1 ? "s" : ""}: ${spell.upcastDice}/level extra`, "spell");
+  }
+
+  hideSpellPicker();
+  resetCombat();
+}
+
+// Scale dice notation by adding upcast dice
+function scaleSpellDice(baseDice, upcastDice, extraLevels) {
+  if (!baseDice) return null;
+  if (!upcastDice || extraLevels <= 0) return baseDice;
+
+  // Parse upcast dice (e.g. "1d6") and multiply by extra levels
+  const match = upcastDice.match(/^(\d+)d(\d+)$/);
+  if (match) {
+    const totalCount = parseInt(match[1]) * extraLevels;
+    return `${baseDice}+${totalCount}d${match[2]}`;
+  }
+  // Fallback: just append
+  return baseDice;
+}
+
 function showSpellPicker() {
   buildSpellGrid();
+  hideUpcastPicker();
   spellPicker.classList.add("visible");
   conditionPicker.classList.remove("visible");
 }
 
 function hideSpellPicker() {
   spellPicker.classList.remove("visible");
+  hideUpcastPicker();
 }
 
 spellCancel.addEventListener("click", () => {
@@ -478,13 +607,29 @@ spellCancel.addEventListener("click", () => {
   resetCombat();
 });
 
-async function onSpellSelected(key, spell) {
-  selectedSpell = { key, ...spell };
+async function onSpellSelected(key, spell, castLevel = null) {
+  // Determine effective cast level and upcast scaling
+  const effectiveLevel = castLevel || spell.level;
+  const extraLevels = effectiveLevel - spell.level;
+  const target = spell.upcastTarget || "damage";
+  const scaledDamage = scaleSpellDice(spell.damage, target === "damage" ? spell.upcastDice : null, extraLevels);
+  const scaledAoeDamage = scaleSpellDice(spell.aoeDamage, target === "aoe" ? spell.upcastDice : null, extraLevels);
+  const scaledHealing = scaleSpellDice(spell.healing, target === "healing" ? spell.upcastDice : null, extraLevels);
+
+  selectedSpell = {
+    key, ...spell,
+    damage: scaledDamage,
+    aoeDamage: scaledAoeDamage,
+    healing: scaledHealing,
+    _castLevel: effectiveLevel,
+    _extraLevels: extraLevels,
+  };
   hideSpellPicker();
 
-  // Expend spell slot if not a cantrip
-  if (spell.level > 0 && currentCharData?.spellSlots) {
-    const slot = currentCharData.spellSlots.find(s => s.level === spell.level && s.remaining > 0);
+  // Expend spell slot at the chosen level
+  const slotLevel = effectiveLevel;
+  if (slotLevel > 0 && currentCharData?.spellSlots) {
+    const slot = currentCharData.spellSlots.find(s => s.level === slotLevel && s.remaining > 0);
     if (slot) {
       slot.remaining--;
       slot.used++;
@@ -493,16 +638,21 @@ async function onSpellSelected(key, spell) {
         for (const item of items) {
           const meta = item.metadata[METADATA_KEY];
           if (!meta?.character?.spellSlots) return;
-          const s = meta.character.spellSlots.find(sl => sl.level === spell.level);
+          const s = meta.character.spellSlots.find(sl => sl.level === slotLevel);
           if (s) { s.remaining = slot.remaining; s.used = slot.used; }
           meta.lastUpdated = Date.now();
         }
       });
       currentCharData._lastUpdated = Date.now();
-      logCombat(`🔮 Lv.${spell.level} spell slot expended (${slot.remaining}/${slot.max} remaining)`, "spell");
+      const upcastLabel = extraLevels > 0 ? ` (upcast from Lv.${spell.level})` : "";
+      logCombat(`🔮 Lv.${slotLevel} spell slot expended${upcastLabel} (${slot.remaining}/${slot.max} remaining)`, "spell");
     } else {
-      logCombat(`⚠️ No Lv.${spell.level} spell slots remaining!`, "info");
+      logCombat(`⚠️ No Lv.${slotLevel} spell slots remaining!`, "info");
     }
+  }
+
+  if (extraLevels > 0) {
+    logCombat(`⬆️ <strong>Upcast</strong> Lv.${spell.level} → Lv.${effectiveLevel}: +${spell.upcastDice}×${extraLevels} extra dice`, "spell");
   }
 
   attackerData = { ...currentCharData };
@@ -516,18 +666,18 @@ async function onSpellSelected(key, spell) {
     selectedWeapon = {
       name: spell.name,
       attackBonus: spell.attackBonus || 0,
-      damage: spell.damage || "1d10",
+      damage: scaledDamage || "1d10",
       damageType: spell.damageType || "Force",
       damageMod: 0,
       attackType: "ranged",
       properties: [],
       mastery: [],
     };
-    showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token...");
+    showCombatOverlay(`${attackerData.name}: ${spell.name}${extraLevels > 0 ? ` (Lv.${effectiveLevel})` : ""}`, "Click on a target token...");
     logCombat(`<strong>${attackerData.name}</strong> prepares <strong>${spell.name}</strong> (${spell.aoeRadius}ft AoE after hit)`, "spell");
   } else if (spell.isAoE) {
     combatState = COMBAT.AOE_CASTING;
-    showCombatOverlay(`${attackerData.name}: ${spell.name}`, "Click on a target token as the AoE center...");
+    showCombatOverlay(`${attackerData.name}: ${spell.name}${extraLevels > 0 ? ` (Lv.${effectiveLevel})` : ""}`, "Click on a target token as the AoE center...");
     logCombat(`<strong>${attackerData.name}</strong> prepares <strong>${spell.name}</strong> (${spell.aoeRadius}ft radius)`, "spell");
   } else if (spell.isAttack) {
     // Spell attack roll (like Eldritch Blast, Fire Bolt) — use attack flow
@@ -536,7 +686,7 @@ async function onSpellSelected(key, spell) {
     selectedWeapon = {
       name: spell.name,
       attackBonus: spell.attackBonus || 0,
-      damage: spell.damage || "1d10",
+      damage: scaledDamage || "1d10",
       damageType: spell.damageType || "Force",
       damageMod: 0,
       attackType: "ranged",
