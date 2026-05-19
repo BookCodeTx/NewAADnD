@@ -4071,6 +4071,9 @@ async function castComboAoE(centerTokenId) {
 
   await broadcastSfx("spell");
 
+  // Show save results panel (will update with damage after roll)
+  showAoeResults(spell, dc, saveResults);
+
   // Auto-roll AoE damage
   const dieType = parseDieType(aoeDmgNotation) || "d6";
   let diceTotal, individualResults;
@@ -4121,6 +4124,10 @@ async function castComboAoE(centerTokenId) {
 
   logCombat(`💥 ${spell.name} explosion: ${aoeDmgNotation} → ${diceStr} = <strong class="damage">${fullDamage}</strong> ${aoeDmgType}`, "damage");
   if (used3D) hide3DOverlay();
+
+  // Update AoE results panel with damage info (save=0, fail=full for combo AoE)
+  const comboSpellView = { ...spell, damageType: aoeDmgType, name: `${spell.name} Explosion` };
+  showAoeResults(comboSpellView, dc, saveResults, fullDamage, 0);
 
   // Apply damage to all targets
   const failCount = saveResults.filter(r => !r.saved).length;
