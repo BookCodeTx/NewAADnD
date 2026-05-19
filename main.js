@@ -653,10 +653,44 @@ async function applyManualDamage() {
   }
 }
 
+// Apply resistance/immunity/vulnerability to damage for a single target
+function applyDefenses(char, baseDamage, dmgType, name) {
+  if (!dmgType || !char) return baseDamage;
+  const type = dmgType.toLowerCase();
+  const matchDef = (list) => (list || []).some(e =>
+    e.type.toLowerCase() === type || e.type.toLowerCase().includes(type)
+  );
+  if (matchDef(char.immunities)) {
+    logCombat(`🛡️ <strong>${name}</strong> is <strong>IMMUNE</strong> to ${dmgType} — damage negated!`, "info");
+    return 0;
+  }
+  if (matchDef(char.resistances)) {
+    const reduced = Math.floor(baseDamage / 2);
+    logCombat(`🛡️ <strong>${name}</strong> has <strong>Resistance</strong> to ${dmgType} — ${baseDamage} → ${reduced}`, "info");
+    return reduced;
+  }
+  if (matchDef(char.vulnerabilities)) {
+    const doubled = baseDamage * 2;
+    logCombat(`💥 <strong>${name}</strong> is <strong>Vulnerable</strong> to ${dmgType} — ${baseDamage} → ${doubled}`, "info");
+    return doubled;
+  }
+  return baseDamage;
+}
+
 async function resolveAoeDamage(fullDamage) {
   const results = pendingAoeResults;
   if (!results) { resetCombat(); return; }
   const halfDamage = Math.floor(fullDamage / 2);
+  const aoeDmgType = selectedSpell?.damageType || "";
+
+  // Pre-calculate per-target damage with defenses
+  const dmgMap = new Map();
+  for (const r of results) {
+    if (!r.char) continue;
+    const baseDmg = r.saved ? halfDamage : fullDamage;
+    const finalDmg = applyDefenses(r.char, baseDmg, aoeDmgType, r.name);
+    dmgMap.set(r.token.id, { dmg: finalDmg, saved: r.saved });
+  }
 
   // Track Wild Shape overflow candidates
   const wsOverflowTargets = [];
@@ -667,12 +701,12 @@ async function resolveAoeDamage(fullDamage) {
       if (!r || !r.char) continue;
       const meta = item.metadata[METADATA_KEY];
       if (!meta?.character) continue;
-      const dmg = r.saved ? halfDamage : fullDamage;
+      const entry = dmgMap.get(item.id);
+      const dmg = entry?.dmg ?? 0;
       let remaining = dmg;
       let temp = meta.character.hp.temp || 0;
       if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
       const newHp = Math.max(0, meta.character.hp.current - remaining);
-      // Check for Wild Shape overflow
       if (newHp === 0 && meta.character._wildShapeOriginal) {
         const overflow = remaining - meta.character.hp.current;
         wsOverflowTargets.push({ tokenId: item.id, char: meta.character, overflow: Math.max(0, overflow), name: r.name });
@@ -680,7 +714,7 @@ async function resolveAoeDamage(fullDamage) {
       meta.character.hp.current = newHp;
       meta.character.hp.temp = temp;
       meta.lastUpdated = Date.now();
-      logCombat(`<strong class="damage">${dmg}</strong> → <strong>${r.name}</strong>${r.saved ? " (half)" : ""}`, "damage");
+      logCombat(`<strong class="damage">${dmg}</strong> → <strong>${r.name}</strong>${entry?.saved ? " (half)" : ""}`, "damage");
     }
   });
 
@@ -693,9 +727,9 @@ async function resolveAoeDamage(fullDamage) {
   await syncInitiativeHP();
   await broadcastSfx("damage");
   for (const r of results) {
-    const dmg = r.saved ? halfDamage : fullDamage;
-    if (dmg > 0) await showFloatingDamage(r.token.id, dmg, "Force", { isSpell: true });
-    // Add skull if token dropped to 0 HP (and not reverted from Wild Shape)
+    const entry = dmgMap.get(r.token.id);
+    const dmg = entry?.dmg ?? (r.saved ? halfDamage : fullDamage);
+    if (dmg > 0) await showFloatingDamage(r.token.id, dmg, aoeDmgType || "Force", { isSpell: true });
     if (r.char) {
       const meta = r.token.metadata?.[METADATA_KEY];
       if (meta?.character?.hp?.current === 0) {
@@ -2296,6 +2330,15 @@ async function castAoeSpell(centerToken) {
   // Update AoE results display with damage info
   showAoeResults(spell, dc, saveResults, fullDamage, halfDamage);
 
+  // Pre-calculate per-target damage with defenses
+  const dmgMap2 = new Map();
+  for (const r of saveResults) {
+    if (!r.char) continue;
+    const baseDmg = r.saved ? halfDamage : fullDamage;
+    const finalDmg = applyDefenses(r.char, baseDmg, dmgType, r.name);
+    dmgMap2.set(r.token.id, { dmg: finalDmg, saved: r.saved });
+  }
+
   // Apply damage to all targets
   const wsOverflowTargets2 = [];
   const tokenIdsToUpdate = saveResults.filter((r) => r.char).map((r) => r.token.id);
@@ -2305,7 +2348,8 @@ async function castAoeSpell(centerToken) {
       if (!r || !r.char) continue;
       const meta = item.metadata[METADATA_KEY];
       if (!meta?.character) continue;
-      const dmg = r.saved ? halfDamage : fullDamage;
+      const entry = dmgMap2.get(item.id);
+      const dmg = entry?.dmg ?? 0;
       let remaining = dmg;
       let temp = meta.character.hp.temp || 0;
       if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
@@ -2317,7 +2361,7 @@ async function castAoeSpell(centerToken) {
       meta.character.hp.current = newHp;
       meta.character.hp.temp = temp;
       meta.lastUpdated = Date.now();
-      logCombat(`<strong class="damage">${dmg}</strong> ${dmgType} → <strong>${r.name}</strong>${r.saved ? " (half)" : ""}`, "damage");
+      logCombat(`<strong class="damage">${dmg}</strong> ${dmgType} → <strong>${r.name}</strong>${entry?.saved ? " (half)" : ""}`, "damage");
     }
   });
 
@@ -2330,7 +2374,8 @@ async function castAoeSpell(centerToken) {
   await syncInitiativeHP();
   await broadcastSfx("damage");
   for (const r of saveResults) {
-    const dmg = r.saved ? halfDamage : fullDamage;
+    const entry = dmgMap2.get(r.token.id);
+    const dmg = entry?.dmg ?? (r.saved ? halfDamage : fullDamage);
     if (dmg > 0) await showFloatingDamage(r.token.id, dmg, dmgType, { isSpell: true });
     if (r.char) {
       const meta = r.token.metadata?.[METADATA_KEY];
@@ -3891,9 +3936,10 @@ async function castSingleTargetSaveSpell(targetToken) {
 
   if (used3D) hide3DOverlay();
 
-  // Apply damage to target
-  if (char && appliedDamage > 0) {
-    let remaining = appliedDamage;
+  // Apply damage to target (with resistance/immunity/vulnerability check)
+  const appliedAfterDef = char ? applyDefenses(char, appliedDamage, dmgType, name) : appliedDamage;
+  if (char && appliedAfterDef > 0) {
+    let remaining = appliedAfterDef;
     let newTemp = char.hp.temp || 0;
     if (newTemp > 0) { const absorbed = Math.min(newTemp, remaining); newTemp -= absorbed; remaining -= absorbed; }
     let newCurrent = Math.max(0, char.hp.current - remaining);
@@ -3925,7 +3971,7 @@ async function castSingleTargetSaveSpell(targetToken) {
 
     await syncInitiativeHP();
     await broadcastSfx("damage");
-    await showFloatingDamage(targetToken.id, appliedDamage, dmgType, { isSpell: true });
+    await showFloatingDamage(targetToken.id, appliedAfterDef, dmgType, { isSpell: true });
 
     if (isDown) {
       addSkullToToken(targetToken.id);
@@ -3935,7 +3981,7 @@ async function castSingleTargetSaveSpell(targetToken) {
     }
 
     logCombat(
-      `<strong class="damage">${appliedDamage}</strong> ${dmgType} → <strong>${name}</strong>: ` +
+      `<strong class="damage">${appliedAfterDef}</strong> ${dmgType} → <strong>${name}</strong>: ` +
       (wsReverted
         ? `<strong>Wild Shape broken</strong> → <strong class="${isDown ? "miss" : ""}">${newCurrent}</strong>/${char.hp.max} HP`
         : `<strong>${char.hp.current}</strong> → <strong class="${isDown ? "miss" : ""}">${newCurrent}</strong>/${char.hp.max} HP`) +
@@ -3943,11 +3989,11 @@ async function castSingleTargetSaveSpell(targetToken) {
       "damage"
     );
 
-    showCombatOverlay(`${spell.name}: ${appliedDamage} ${dmgType}!`,
+    showCombatOverlay(`${spell.name}: ${appliedAfterDef} ${dmgType}!`,
       isDown ? `${name} falls to 0 HP!` : `${name}: ${newCurrent}/${char.hp.max} HP${saved ? " (saved, half dmg)" : ""}`);
-    await OBR.notification.show(`${spell.name}: ${appliedDamage} ${dmgType} → ${name}${saved ? " (saved)" : ""}`, isDown ? "ERROR" : "SUCCESS");
+    await OBR.notification.show(`${spell.name}: ${appliedAfterDef} ${dmgType} → ${name}${saved ? " (saved)" : ""}`, isDown ? "ERROR" : "SUCCESS");
   } else {
-    showCombatOverlay(`${spell.name}: ${saveLabel}!`, saved ? `${name} takes no effect` : `${appliedDamage} ${dmgType} damage`);
+    showCombatOverlay(`${spell.name}: ${saveLabel}!`, saved ? `${name} takes no effect` : `${appliedAfterDef} ${dmgType} damage`);
     await OBR.notification.show(`${spell.name}: ${name} ${saveLabel}`, saved ? "WARNING" : "SUCCESS");
   }
 
@@ -4080,6 +4126,15 @@ async function castComboAoE(centerTokenId) {
   const failCount = saveResults.filter(r => !r.saved).length;
   const saveCount = saveResults.filter(r => r.saved).length;
 
+  // Pre-calculate per-target damage with defenses
+  const dmgMap3 = new Map();
+  for (const r of saveResults) {
+    if (!r.char) continue;
+    const baseDmg = r.saved ? 0 : fullDamage;
+    const finalDmg = applyDefenses(r.char, baseDmg, aoeDmgType, r.name);
+    dmgMap3.set(r.token.id, { dmg: finalDmg, saved: r.saved });
+  }
+
   const wsOverflowTargets3 = [];
   const tokenIdsToUpdate = saveResults.filter(r => r.char).map(r => r.token.id);
   await OBR.scene.items.updateItems(tokenIdsToUpdate, (items) => {
@@ -4088,7 +4143,8 @@ async function castComboAoE(centerTokenId) {
       if (!r || !r.char) continue;
       const meta = item.metadata[METADATA_KEY];
       if (!meta?.character) continue;
-      const dmg = r.saved ? 0 : fullDamage;
+      const entry = dmgMap3.get(item.id);
+      const dmg = entry?.dmg ?? 0;
       let remaining = dmg;
       let temp = meta.character.hp.temp || 0;
       if (temp > 0) { const absorbed = Math.min(temp, remaining); temp -= absorbed; remaining -= absorbed; }
@@ -4100,7 +4156,7 @@ async function castComboAoE(centerTokenId) {
       meta.character.hp.current = newHp;
       meta.character.hp.temp = temp;
       meta.lastUpdated = Date.now();
-      logCombat(`${r.saved ? `<strong>${r.name}</strong> saved — no damage` : `<strong class="damage">${dmg}</strong> ${aoeDmgType} → <strong>${r.name}</strong>`}`, "damage");
+      logCombat(`${entry?.saved || dmg === 0 ? `<strong>${r.name}</strong> saved — no damage` : `<strong class="damage">${dmg}</strong> ${aoeDmgType} → <strong>${r.name}</strong>`}`, "damage");
     }
   });
 
@@ -4112,7 +4168,8 @@ async function castComboAoE(centerTokenId) {
   await syncInitiativeHP();
   await broadcastSfx("damage");
   for (const r of saveResults) {
-    const dmg = r.saved ? 0 : fullDamage;
+    const entry = dmgMap3.get(r.token.id);
+    const dmg = entry?.dmg ?? (r.saved ? 0 : fullDamage);
     if (dmg > 0) await showFloatingDamage(r.token.id, dmg, aoeDmgType, { isSpell: true });
     if (r.char) {
       const updatedItems = await OBR.scene.items.getItems([r.token.id]);
@@ -4638,21 +4695,7 @@ async function resolveDamage(result) {
   // Check target's resistances / immunities / vulnerabilities
   const dmgType = (selectedWeapon?.damageType || selectedSpell?.damageType || "").toLowerCase();
   if (dmgType && targetData) {
-    const matchDef = (list, type) => (list || []).some(e =>
-      e.type.toLowerCase() === type || e.type.toLowerCase().includes(type)
-    );
-    if (matchDef(targetData.immunities, dmgType)) {
-      logCombat(`🛡️ <strong>${targetName}</strong> is <strong>IMMUNE</strong> to ${dmgType} — damage negated!`, "info");
-      damage = 0;
-    } else if (matchDef(targetData.resistances, dmgType)) {
-      const reduced = Math.floor(damage / 2);
-      logCombat(`🛡️ <strong>${targetName}</strong> has <strong>Resistance</strong> to ${dmgType} — ${damage} → ${reduced}`, "info");
-      damage = reduced;
-    } else if (matchDef(targetData.vulnerabilities, dmgType)) {
-      const doubled = damage * 2;
-      logCombat(`💥 <strong>${targetName}</strong> is <strong>Vulnerable</strong> to ${dmgType} — ${damage} → ${doubled}`, "info");
-      damage = doubled;
-    }
+    damage = applyDefenses(targetData, damage, dmgType, targetName);
   }
 
   let remaining = damage;
