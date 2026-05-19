@@ -156,6 +156,8 @@ const initEndBtn = document.getElementById("init-end-btn");
 let currentTokenId = null;
 let currentCharData = null;
 let currentConditions = [];
+let playerRole = "GM"; // "GM" or "PLAYER" — fetched on init
+let playerId = ""; // current player's OBR user ID
 // 3D dice now embedded in popover (no separate modal)
 
 // Combat state machine
@@ -3639,7 +3641,7 @@ document.getElementById("paste-apply-btn").addEventListener("click", async () =>
 
     await OBR.scene.items.updateItems([currentTokenId], (items) => {
       for (const item of items) {
-        item.metadata[METADATA_KEY] = { characterId: String(charId), character: char, lastUpdated: Date.now() };
+        item.metadata[METADATA_KEY] = { characterId: String(charId), character: char, linkedByPlayerId: playerId, lastUpdated: Date.now() };
       }
     });
 
@@ -4131,6 +4133,10 @@ statsBar.classList.add("hidden");
 linkPanel.classList.add("hidden");
 
 OBR.onReady(async () => {
+  // Fetch player role and ID for permission checks
+  playerRole = await OBR.player.getRole();
+  playerId = await OBR.player.getId();
+
   const isReady = await OBR.scene.isReady();
   if (isReady) setupListeners();
 
@@ -4247,6 +4253,36 @@ async function handleSelectionChange() {
   currentTokenId = token.id;
   const meta = token.metadata?.[METADATA_KEY];
   currentConditions = token.metadata?.[COND_METADATA_KEY] || [];
+
+  // ── Player permission check: block non-owned tokens ──
+  if (playerRole === "PLAYER" && meta?.character) {
+    const isOwner = meta.linkedByPlayerId === playerId
+      || token.createdUserId === playerId;
+    if (!isOwner) {
+      // Player clicked a monster/other player's token — show restricted view
+      hideHotbar();
+      linkPanel.classList.add("hidden");
+      const tokenName = meta.character.name || token.name || "Token";
+      tokenNameEl.textContent = `🔒 ${tokenName}`;
+      hotbar.classList.remove("hidden");
+      statsBar.innerHTML = `<div style="color:#888;font-size:11px;text-align:center;width:100%;padding:6px 0">GM Only — ข้อมูลตัวละครนี้มองเห็นได้เฉพาะ GM</div>`;
+      statsBar.classList.remove("hidden");
+      currentCharData = null;
+      return;
+    }
+  }
+
+  // ── Player cannot link new tokens (GM only) ──
+  if (playerRole === "PLAYER" && !meta?.character) {
+    hideHotbar();
+    linkPanel.classList.add("hidden");
+    tokenNameEl.textContent = `🔒 ${token.name || "Token"}`;
+    hotbar.classList.remove("hidden");
+    statsBar.innerHTML = `<div style="color:#888;font-size:11px;text-align:center;width:100%;padding:6px 0">GM Only — เฉพาะ GM เท่านั้นที่ link ตัวละครได้</div>`;
+    statsBar.classList.remove("hidden");
+    currentCharData = null;
+    return;
+  }
 
   if (meta?.character) {
     meta.character._lastUpdated = meta.lastUpdated || 0;
@@ -6090,7 +6126,7 @@ linkBtn.addEventListener("click", async () => {
     const char = result.character;
     await OBR.scene.items.updateItems([currentTokenId], (items) => {
       for (const item of items) {
-        item.metadata[METADATA_KEY] = { characterId: charId, character: char, lastUpdated: Date.now() };
+        item.metadata[METADATA_KEY] = { characterId: charId, character: char, linkedByPlayerId: playerId, lastUpdated: Date.now() };
       }
     });
     char._lastUpdated = Date.now();
@@ -6130,7 +6166,7 @@ document.getElementById("refresh-btn").addEventListener("click", async () => {
     if (!result.success) { showError(result.error, result.hint); await OBR.notification.show(result.error, "ERROR"); return; }
     await OBR.scene.items.updateItems([currentTokenId], (items) => {
       for (const item of items) {
-        item.metadata[METADATA_KEY] = { characterId: meta.characterId, character: result.character, lastUpdated: Date.now() };
+        item.metadata[METADATA_KEY] = { characterId: meta.characterId, character: result.character, linkedByPlayerId: meta.linkedByPlayerId || playerId, lastUpdated: Date.now() };
       }
     });
     result.character._lastUpdated = Date.now();
