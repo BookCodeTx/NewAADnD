@@ -4654,6 +4654,28 @@ async function rollDamageDice(isCrit, targetName, smite = null, sneak = null) {
     }
   }
 
+  // Savage Attacker: reroll weapon dice once per turn, keep higher (weapon attacks only)
+  const hasSavageAttacker = attackerData?.features?.some(f => f.name?.toLowerCase().includes("savage attacker"));
+  if (hasSavageAttacker && hasDice && combatAction === "attack") {
+    // Re-roll only weapon dice (not smite/sneak), compare totals
+    const rerolled = rollDiceValues(weaponNotation);
+    const weaponDiceOnly = used3D
+      ? individualResults.slice(0, individualResults.length - bonusDiceGroups.reduce((n, g) => n + (g.dice.match(/(\d+)d/)?.[1] || 1) * 1, 0))
+      : individualResults.slice(0, rerolled.individualResults.length);
+    const originalWeaponTotal = weaponDiceOnly.reduce((s, v) => s + v, 0);
+    const rerollTotal = rerolled.diceTotal;
+
+    if (rerollTotal > originalWeaponTotal) {
+      // Replace weapon dice results with reroll
+      const bonusResults = individualResults.slice(weaponDiceOnly.length);
+      individualResults = [...rerolled.individualResults, ...bonusResults];
+      diceTotal = individualResults.reduce((s, v) => s + v, 0);
+      logCombat(`⚔️ <strong>Savage Attacker</strong>: rerolled weapon dice [${weaponDiceOnly.join(",")}]=${originalWeaponTotal} → [${rerolled.individualResults.join(",")}]=${rerollTotal} — <strong>kept higher!</strong>`, "info");
+    } else {
+      logCombat(`⚔️ <strong>Savage Attacker</strong>: rerolled weapon dice [${rerolled.individualResults.join(",")}]=${rerollTotal} vs [${weaponDiceOnly.join(",")}]=${originalWeaponTotal} — kept original`, "info");
+    }
+  }
+
   // Add condition-based melee damage bonus (e.g. Rage +2)
   let condDmgBonus = 0;
   if (weapon.attackType === "melee" || !weapon.attackType) {
