@@ -172,6 +172,7 @@ let selectedSpell = null;
 let selectedWeapon = null;
 let pendingAoeResults = null;
 let floaterModalOpen = false;
+let pendingNickAttack = null; // { targetTokenId, targetData, attackerData, attackerTokenId }
 
 const FLOATER_CHANNEL = "com.dnd-hotbar/floater";
 const FLOATER_MODAL_ID = "com.dnd-hotbar/floater-modal";
@@ -232,6 +233,7 @@ function resetCombat() {
   selectedWeapon = null;
   pendingAoeResults = null;
   floaterModalOpen = false;
+  pendingNickAttack = null;
   hideCombatOverlay();
   hideSpellPicker();
   hideActionPicker();
@@ -5094,6 +5096,11 @@ async function resolveDamage(result) {
     setTimeout(async () => {
       await castComboAoE(targetTokenId);
     }, 2000);
+  } else if (pendingNickAttack) {
+    // Nick mastery: auto-trigger extra attack with off-hand weapon
+    const nick = pendingNickAttack;
+    pendingNickAttack = null; // clear so the extra attack doesn't chain
+    setTimeout(() => triggerNickExtraAttack(nick), 2000);
   } else {
     setTimeout(() => resetCombat(), 3200);
   }
@@ -5129,14 +5136,210 @@ function applyMasteryOnHit(targetName, isDown) {
       case "Vex":
         logCombat(`⚔️ <strong>Vex</strong>: ${attackerData.name} has <strong>advantage</strong> on next attack vs ${targetName}`, "info");
         break;
-      case "Nick":
-        logCombat(`⚔️ <strong>Nick</strong>: ${attackerData.name} can make an extra attack as part of the Attack action`, "info");
+      case "Nick": {
+        // Find a different equipped light weapon for the extra attack
+        const nickWeapons = (attackerData.weapons || []).filter(w =>
+          w.equipped && w.name !== selectedWeapon?.name &&
+          (w.properties?.includes("Light") || w.mastery?.includes("Nick"))
+        );
+        if (nickWeapons.length > 0) {
+          pendingNickAttack = {
+            weapon: nickWeapons[0],
+            targetTokenId,
+            targetData: { ...targetData },
+            attackerData: { ...attackerData },
+            attackerTokenId,
+          };
+          logCombat(`⚔️ <strong>Nick</strong>: ${attackerData.name} follows up with <strong>${nickWeapons[0].name}</strong>!`, "hit");
+        } else {
+          logCombat(`⚔️ <strong>Nick</strong>: no other light weapon equipped for extra attack`, "info");
+        }
         break;
+      }
       case "Cleave":
         logCombat(`⚔️ <strong>Cleave</strong>: ${attackerData.name} can hit another creature within 5ft of ${targetName} (${selectedWeapon.abilityMod || 0} ${selectedWeapon.damageType} damage)`, "info");
         break;
     }
   }
+}
+
+// ── Nick Mastery: auto extra attack with off-hand weapon ──
+async function triggerNickExtraAttack(nick) {
+  // Re-read target's current state (HP may have changed)
+  let freshTargetData = nick.targetData;
+  try {
+    const items = await OBR.scene.items.getItems([nick.targetTokenId]);
+    if (items[0]) {
+      const meta = items[0].metadata?.[METADATA_KEY];
+      if (meta?.character) freshTargetData = meta.character;
+    }
+  } catch { /* use stale data */ }
+
+  // If target is already down, skip the extra attack
+  if (freshTargetData.hp?.current <= 0) {
+    logCombat(`⚔️ <strong>Nick</strong>: ${nick.attackerData.name}'s extra attack skipped — target is already down`, "info");
+    resetCombat();
+    return;
+  }
+
+  // Set up combat state for the extra attack
+  selectedWeapon = nick.weapon;
+  attackerData = nick.attackerData;
+  attackerTokenId = nick.attackerTokenId;
+  targetTokenId = nick.targetTokenId;
+  targetData = freshTargetData;
+  combatState = COMBAT.ROLLING_ATTACK;
+  combatAction = "attack";
+
+  const wb = nick.weapon.attackBonus ?? 0;
+  logCombat(`⚔️ <strong>Nick Extra Attack</strong>: <strong>${nick.attackerData.name}</strong> strikes with <strong>${nick.weapon.name}</strong> (${wb >= 0 ? "+" : ""}${wb} to hit)`, "hit");
+  showCombatOverlay(`Nick: ${nick.weapon.name}`, `Rolling attack vs ${freshTargetData.name}...`);
+
+  // Auto-roll the attack
+  const roll = Math.floor(Math.random() * 20) + 1;
+  const total = roll + wb;
+  const targetAC = freshTargetData.ac || 10;
+  const isCrit = roll === 20;
+  const isMiss = roll === 1 || (!isCrit && total < targetAC);
+
+  // Brief pause for dramatic effect
+  await new Promise(r => setTimeout(r, 800));
+
+  if (isMiss) {
+    logCombat(`⚔️ Nick: ${nick.attackerData.name} rolls <strong>${roll}</strong>${fmtMod(wb)}=<strong>${total}</strong> vs AC ${targetAC} — <strong class="miss">MISS!</strong>`, "miss");
+    showCombatOverlay(`Nick: MISS!`, `${nick.weapon.name} attack fails.`);
+    playMissEffect();
+    await broadcastSfx("miss");
+    if (nick.targetTokenId) tokenMissEffect(nick.targetTokenId);
+
+    // Graze on Nick weapon
+    const hasGraze = nick.weapon.mastery?.includes("Graze");
+    if (hasGraze && roll !== 1) {
+      const grazeDmg = Math.max(0, nick.weapon.abilityMod || nick.weapon.damageMod || 0);
+      if (grazeDmg > 0 && freshTargetData) {
+        logCombat(`⚔️ <strong>Graze</strong>: ${grazeDmg} ${nick.weapon.damageType || "damage"}`, "hit");
+        let remaining = grazeDmg;
+        let newTemp = freshTargetData.hp.temp || 0;
+        if (newTemp > 0) { const absorbed = Math.min(newTemp, remaining); newTemp -= absorbed; remaining -= absorbed; }
+        const newCurrent = Math.max(0, freshTargetData.hp.current - remaining);
+        await OBR.scene.items.updateItems([nick.targetTokenId], (items) => {
+          for (const item of items) {
+            const meta = item.metadata[METADATA_KEY];
+            if (!meta?.character) return;
+            meta.character.hp.current = newCurrent;
+            meta.character.hp.temp = newTemp;
+            meta.lastUpdated = Date.now();
+          }
+        });
+        await syncInitiativeHP();
+      }
+    }
+
+    setTimeout(() => resetCombat(), 2000);
+    return;
+  }
+
+  // Hit or crit
+  const hitLabel = isCrit ? "CRITICAL HIT" : "HIT";
+  logCombat(`⚔️ Nick: ${nick.attackerData.name} rolls <strong>${roll}</strong>${fmtMod(wb)}=<strong>${total}</strong> vs AC ${targetAC} — <strong class="${isCrit ? "crit" : "hit"}">${hitLabel}!</strong>`, isCrit ? "crit" : "hit");
+
+  if (isCrit) {
+    showCombatOverlay(`Nick: CRITICAL HIT!`, `Rolling damage...`);
+    playCritEffect("Slashing");
+    await broadcastSfx("crit");
+    if (nick.targetTokenId) tokenCritEffect(nick.targetTokenId);
+  } else {
+    showCombatOverlay(`Nick: ${hitLabel}!`, `Rolling damage...`);
+    await broadcastSfx("attack-hit");
+    playHitEffect("Slashing");
+    if (nick.targetTokenId) tokenHitEffect(nick.targetTokenId);
+  }
+
+  // Roll damage for the off-hand weapon
+  const weaponDmg = nick.weapon.damage || "1d4";
+  const damageMod = nick.weapon.damageMod || 0;
+  const { diceTotal, individualResults } = rollDiceValues(weaponDmg);
+  let totalDamage = diceTotal + damageMod;
+
+  // Double dice on crit
+  if (isCrit) {
+    const critExtra = rollDiceValues(weaponDmg);
+    totalDamage += critExtra.diceTotal;
+    logCombat(`🎯 Crit extra: +${critExtra.diceTotal} → ${totalDamage} total`, "crit");
+  }
+
+  totalDamage = Math.max(0, totalDamage);
+
+  // Apply defenses
+  const dmgType = nick.weapon.damageType || "Slashing";
+  totalDamage = applyDefenses(freshTargetData, totalDamage, dmgType, freshTargetData.name);
+
+  logCombat(`⚔️ Nick damage: [${individualResults.join(",")}]${fmtMod(damageMod)} = <strong class="damage">${totalDamage} ${dmgType}</strong>`, "damage");
+
+  // Apply damage to target
+  let remaining = totalDamage;
+  let newTemp = freshTargetData.hp.temp || 0;
+  if (newTemp > 0) {
+    const absorbed = Math.min(newTemp, remaining);
+    newTemp -= absorbed;
+    remaining -= absorbed;
+    if (absorbed > 0) logCombat(`Temp HP absorbs ${absorbed} damage`, "info");
+  }
+  let newCurrent = Math.max(0, freshTargetData.hp.current - remaining);
+  const isDown = newCurrent === 0;
+
+  // Wild Shape overflow
+  if (isDown && freshTargetData._wildShapeOriginal) {
+    const overflow = remaining - freshTargetData.hp.current;
+    logCombat(`🐾 <strong>${freshTargetData._wildShapeForm}</strong> form broken!`, "spell");
+    await wildShapeRevertWithOverflow(nick.targetTokenId, freshTargetData, Math.max(0, overflow));
+    newCurrent = freshTargetData.hp.current;
+  } else {
+    await OBR.scene.items.updateItems([nick.targetTokenId], (items) => {
+      for (const item of items) {
+        const meta = item.metadata[METADATA_KEY];
+        if (!meta?.character) return;
+        meta.character.hp.current = newCurrent;
+        meta.character.hp.temp = newTemp;
+        meta.lastUpdated = Date.now();
+      }
+    });
+  }
+
+  await syncInitiativeHP();
+
+  const targetName = freshTargetData.name || "Target";
+  logCombat(`<strong class="damage">${totalDamage} damage</strong> → ${targetName}: <strong>${freshTargetData.hp.current}</strong> → <strong class="${isDown ? "miss" : ""}">${newCurrent}</strong>/${freshTargetData.hp.max} HP${isDown ? " — <strong class=\"miss\">DOWN!</strong>" : ""}`, "damage");
+  await OBR.notification.show(`Nick: ${totalDamage} damage to ${targetName}!`, isDown ? "ERROR" : "SUCCESS");
+
+  setTimeout(async () => {
+    await broadcastSfx("damage");
+    await showFloatingDamage(nick.targetTokenId, totalDamage, dmgType, { isCrit });
+    if (isDown) {
+      tokenDownEffect(nick.targetTokenId);
+      addSkullToToken(nick.targetTokenId);
+    }
+  }, 400);
+
+  // Apply mastery effects from the Nick weapon (but NOT Nick itself to prevent infinite chain)
+  const otherMastery = (nick.weapon.mastery || []).filter(m => m !== "Nick");
+  if (otherMastery.length > 0 && !isDown) {
+    for (const m of otherMastery) {
+      switch (m) {
+        case "Vex":
+          logCombat(`⚔️ <strong>Vex</strong>: ${nick.attackerData.name} has advantage on next attack vs ${targetName}`, "info");
+          break;
+        case "Sap":
+          logCombat(`⚔️ <strong>Sap</strong>: ${targetName} has disadvantage on next attack roll`, "info");
+          break;
+        case "Slow":
+          logCombat(`⚔️ <strong>Slow</strong>: ${targetName}'s speed reduced by 10 ft`, "info");
+          break;
+      }
+    }
+  }
+
+  setTimeout(() => resetCombat(), 3200);
 }
 
 async function syncInitiativeHP() {
