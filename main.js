@@ -98,6 +98,22 @@ const aoeTargetList = document.getElementById("aoe-target-list");
 // Token save panel
 const tokenSavePanel = document.getElementById("token-save-panel");
 
+// Monster Viewer panel (floating read-only popup)
+const monsterViewerPanel = document.getElementById("monster-viewer-panel");
+const mvBackdrop = document.getElementById("mv-backdrop");
+const mvTitle = document.getElementById("mv-title");
+const mvSubtitle = document.getElementById("mv-subtitle");
+const mvContent = document.getElementById("mv-content");
+const mvCloseBtn = document.getElementById("mv-close");
+
+// GM Share Token picker
+const sharePicker = document.getElementById("share-picker");
+const sharePlayerList = document.getElementById("share-player-list");
+const shareSaveBtn = document.getElementById("share-save-btn");
+const shareCancelBtn = document.getElementById("share-cancel-btn");
+const shareStatus = document.getElementById("share-status");
+const shareCurrent = document.getElementById("share-current");
+
 // Monster importer
 const monsterJson = document.getElementById("monster-json");
 const monsterApplyBtn = document.getElementById("monster-apply-btn");
@@ -175,6 +191,7 @@ let selectedWeapon = null;
 let pendingAoeResults = null;
 let floaterModalOpen = false;
 let pendingNickAttack = null; // { targetTokenId, targetData, attackerData, attackerTokenId }
+let observedTokenId = null; // monster token being viewed via Monster Viewer
 
 const FLOATER_CHANNEL = "com.dnd-hotbar/floater";
 const FLOATER_MODAL_ID = "com.dnd-hotbar/floater-modal";
@@ -2670,6 +2687,7 @@ function hideOtherPickers(except) {
   if (except !== "token-save") tokenSavePanel.classList.remove("visible");
   if (except !== "wildshape") document.getElementById("wildshape-panel")?.classList.remove("visible");
   if (except !== "loh") lohPanel?.classList.remove("visible");
+  if (except !== "share") sharePicker?.classList.remove("visible");
 }
 
 // ════════════════════════════════════════
@@ -4214,6 +4232,20 @@ function setupListeners() {
     currentConditions = token.metadata?.[COND_METADATA_KEY] || [];
     renderConditionBadges();
   });
+
+  // Also watch for changes to the observed monster token (for Monster Viewer real-time sync)
+  OBR.scene.items.onChange((items) => {
+    if (!observedTokenId) return;
+    const token = items.find(i => i.id === observedTokenId);
+    if (!token) return;
+    const meta = token.metadata?.[METADATA_KEY];
+    if (!meta?.character) return;
+    const tokenConditions = token.metadata?.[COND_METADATA_KEY] || [];
+    // Re-render the monster viewer with updated data
+    if (monsterViewerPanel.classList.contains("visible")) {
+      showMonsterViewer(meta.character, tokenConditions);
+    }
+  });
 }
 
 async function handleSelectionChange() {
@@ -4259,7 +4291,23 @@ async function handleSelectionChange() {
     const isGmLinked = meta.linkedByRole === "GM"
       || (!meta.linkedByRole && meta.linkedByPlayerId !== playerId && token.createdUserId !== playerId);  // legacy tokens: block unless it's your own
     if (isGmLinked) {
-      // Player clicked a GM-linked monster/NPC token — show restricted view
+      // Check if this player is in the shared viewers whitelist
+      const shareData = token.metadata?.[SHARE_METADATA_KEY];
+      const allowedIds = shareData?.allowedPlayerIds || [];
+      const isAllowed = allowedIds.includes(playerId);
+
+      if (isAllowed) {
+        // Player is allowed — open floating Monster Viewer (read-only)
+        observedTokenId = token.id;
+        const tokenConditions = token.metadata?.[COND_METADATA_KEY] || [];
+        showMonsterViewer(meta.character, tokenConditions);
+        // Don't change currentTokenId/currentCharData — keep player's own hotbar intact
+        currentTokenId = null;
+        currentCharData = null;
+        return;
+      }
+
+      // Player is NOT allowed — show restricted view
       hideHotbar();
       linkPanel.classList.add("hidden");
       const tokenName = meta.character.name || token.name || "Token";
@@ -5898,6 +5946,231 @@ async function rollDice(notation, label, modifier = 0, rollId = null, condFx = n
 
 
 // ════════════════════════════════════════
+// MONSTER VIEWER (read-only floating popup for shared tokens)
+// ════════════════════════════════════════
+
+function showMonsterViewer(char, tokenConditions = []) {
+  if (!char) return;
+
+  const hpPct = Math.max(0, (char.hp.current / char.hp.max) * 100);
+  let hpColor = "#45e9a0";
+  if (hpPct <= 25) hpColor = "#e94560";
+  else if (hpPct <= 50) hpColor = "#e9a045";
+
+  const classInfo = char.classes?.map(c => c.name).join("/") || char.race || "";
+  const levelStr = char.level ? `Lv.${char.level}` : "";
+  const sizeStr = char.size || "";
+
+  mvTitle.innerHTML = `${char.name} <span class="mv-badge">Read-Only</span>`;
+  mvSubtitle.textContent = [levelStr, classInfo, sizeStr].filter(Boolean).join(" · ");
+
+  let html = "";
+
+  // Stats row: HP, AC, Speed
+  html += `<div class="mv-stats-row">
+    <div class="mv-stat-chip hp" style="--hp-pct: ${hpPct}%; --hp-color: ${hpColor}">
+      <span>❤️</span>
+      <span>${char.hp.current}/${char.hp.max}</span>
+      ${char.hp.temp ? `<span class="temp">+${char.hp.temp}</span>` : ""}
+    </div>
+    <div class="mv-stat-chip"><span>🛡️</span><span>AC ${char.ac}</span></div>
+    <div class="mv-stat-chip"><span>👟</span><span>${char.speed}ft</span></div>
+  </div>`;
+
+  // Ability scores
+  if (char.stats?.length) {
+    html += `<div class="mv-stats-row">`;
+    for (const s of char.stats) {
+      html += `<div class="mv-stat-chip ability">
+        <span class="mv-ability-name">${s.name}</span>
+        <span class="mv-ability-val">${s.value}</span>
+        <span class="mv-ability-mod">${s.modifier >= 0 ? "+" : ""}${s.modifier}</span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Conditions
+  if (tokenConditions.length > 0) {
+    html += `<div class="mv-cond-row">`;
+    for (const key of tokenConditions) {
+      const cond = CONDITIONS[key];
+      if (cond) {
+        const color = getTagColor(key);
+        html += `<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:${color}22;color:${color};border:1px solid ${color}44;font-weight:600">${cond.icon} ${cond.name}</span>`;
+      }
+    }
+    html += `</div>`;
+  }
+
+  // Defenses (resistances, immunities, vulnerabilities)
+  const hasDefenses = char.resistances?.length || char.immunities?.length || char.vulnerabilities?.length || char.conditionImmunities?.length;
+  if (hasDefenses) {
+    html += `<div class="mv-divider"></div><div class="mv-section-title">🛡️ Defenses</div><div class="mv-defense-row">`;
+    for (const r of (char.resistances || [])) html += `<span class="mv-def-badge resist">Resist: ${r}</span>`;
+    for (const r of (char.immunities || [])) html += `<span class="mv-def-badge immune">Immune: ${r}</span>`;
+    for (const r of (char.vulnerabilities || [])) html += `<span class="mv-def-badge vuln">Vuln: ${r}</span>`;
+    for (const r of (char.conditionImmunities || [])) html += `<span class="mv-def-badge immune">CI: ${r}</span>`;
+    html += `</div>`;
+  }
+
+  // Weapons / Actions
+  if (char.weapons?.length) {
+    html += `<div class="mv-divider"></div><div class="mv-section-title">⚔️ Actions</div><div class="mv-weapon-list">`;
+    for (const w of char.weapons) {
+      const atkBonus = w.attackBonus ?? 0;
+      const atkSign = atkBonus >= 0 ? "+" : "";
+      const dmgMod = w.damageMod ?? 0;
+      const dmgStr = dmgMod !== 0 ? (dmgMod > 0 ? `+${dmgMod}` : `${dmgMod}`) : "";
+      const masteryTags = (w.mastery || []).map(m => `<span class="mastery-tag">${m}</span>`).join("");
+      html += `<div class="mv-weapon">
+        <div>
+          <div class="mv-weapon-name">${w.name} ${masteryTags}</div>
+          <div class="mv-weapon-info">${w.type || ""}${w.properties?.length ? " · " + w.properties.join(", ") : ""}</div>
+        </div>
+        <div class="mv-weapon-right">
+          <span class="mv-weapon-atk">${atkSign}${atkBonus}</span>
+          <span class="mv-weapon-dmg">${w.damage}${dmgStr} ${w.damageType || ""}</span>
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Features / Traits
+  if (char.features?.length) {
+    html += `<div class="mv-divider"></div><div class="mv-section-title">📜 Features & Traits</div>`;
+    for (const f of char.features.slice(0, 20)) {
+      html += `<div class="mv-trait">
+        <div class="mv-trait-name">${f.name}</div>
+        ${f.description ? `<div class="mv-trait-desc">${f.description.substring(0, 200)}${f.description.length > 200 ? "..." : ""}</div>` : ""}
+      </div>`;
+    }
+  }
+
+  // Spells
+  if (char.spells?.length) {
+    const prepared = char.spells.filter(s => s.level === 0 || s.prepared);
+    if (prepared.length) {
+      html += `<div class="mv-divider"></div><div class="mv-section-title">🔮 Spells (${prepared.length})</div><div class="mv-spell-list">`;
+      for (const s of prepared) {
+        const lvStr = s.level === 0 ? "C" : `${s.level}`;
+        html += `<span class="mv-spell-badge">[${lvStr}] ${s.name}</span>`;
+      }
+      html += `</div>`;
+    }
+  }
+
+  mvContent.innerHTML = html;
+  monsterViewerPanel.classList.add("visible");
+  mvBackdrop.classList.add("visible");
+}
+
+function hideMonsterViewer() {
+  monsterViewerPanel.classList.remove("visible");
+  mvBackdrop.classList.remove("visible");
+  observedTokenId = null;
+}
+
+// Close events
+mvCloseBtn.addEventListener("click", hideMonsterViewer);
+mvBackdrop.addEventListener("click", hideMonsterViewer);
+
+// ════════════════════════════════════════
+// GM SHARE TOKEN — Player Picker
+// ════════════════════════════════════════
+
+const SHARE_METADATA_KEY = "com.dnd-hotbar/shared-viewers";
+
+async function showSharePicker() {
+  if (playerRole !== "GM" || !currentTokenId) return;
+
+  shareStatus.textContent = "กำลังโหลด...";
+  sharePicker.classList.add("visible");
+
+  // Get current allowed list from token metadata
+  const items = await OBR.scene.items.getItems([currentTokenId]);
+  const token = items[0];
+  const allowedIds = token?.metadata?.[SHARE_METADATA_KEY]?.allowedPlayerIds || [];
+
+  // Get party members
+  let players = [];
+  try {
+    const partyMembers = await OBR.party.getPlayers();
+    players = partyMembers.filter(p => p.role === "PLAYER");
+  } catch {
+    shareStatus.textContent = "ไม่สามารถดึงรายชื่อผู้เล่นได้";
+    return;
+  }
+
+  if (players.length === 0) {
+    shareStatus.textContent = "ไม่มีผู้เล่นออนไลน์";
+    sharePlayerList.innerHTML = `<div style="color:#667788;font-size:10px;text-align:center;padding:12px">ไม่พบผู้เล่นในห้อง<br><span style="font-size:9px;color:#556">ผู้เล่นต้องเปิดหน้าอยู่ถึงจะเห็น</span></div>`;
+    return;
+  }
+
+  // Show current state
+  if (allowedIds.length > 0) {
+    shareCurrent.textContent = `✅ แชร์อยู่กับ ${allowedIds.length} คน`;
+  } else {
+    shareCurrent.textContent = "";
+  }
+
+  shareStatus.textContent = `เลือกผู้เล่นที่จะมองเห็น token นี้`;
+
+  // Build player checkboxes
+  sharePlayerList.innerHTML = "";
+  for (const p of players) {
+    const row = document.createElement("div");
+    row.className = `share-player-row${allowedIds.includes(p.id) ? " checked" : ""}`;
+    row.dataset.playerId = p.id;
+    row.innerHTML = `
+      <div class="share-player-check">${allowedIds.includes(p.id) ? "✓" : ""}</div>
+      <span class="share-player-name">${p.name || "Player"}</span>
+      <span class="share-player-role">${p.connectionId ? "Online" : ""}</span>
+    `;
+    row.addEventListener("click", () => {
+      row.classList.toggle("checked");
+      const check = row.querySelector(".share-player-check");
+      check.textContent = row.classList.contains("checked") ? "✓" : "";
+    });
+    sharePlayerList.appendChild(row);
+  }
+}
+
+function hideSharePicker() {
+  sharePicker.classList.remove("visible");
+}
+
+shareCancelBtn.addEventListener("click", hideSharePicker);
+
+shareSaveBtn.addEventListener("click", async () => {
+  if (!currentTokenId) return;
+
+  // Collect checked player IDs
+  const checkedRows = sharePlayerList.querySelectorAll(".share-player-row.checked");
+  const allowedPlayerIds = Array.from(checkedRows).map(r => r.dataset.playerId);
+
+  // Save to token metadata
+  await OBR.scene.items.updateItems([currentTokenId], (items) => {
+    for (const item of items) {
+      item.metadata[SHARE_METADATA_KEY] = {
+        allowedPlayerIds,
+        lastUpdated: Date.now()
+      };
+    }
+  });
+
+  if (allowedPlayerIds.length > 0) {
+    await OBR.notification.show(`แชร์ token กับ ${allowedPlayerIds.length} ผู้เล่น`, "SUCCESS");
+  } else {
+    await OBR.notification.show("ยกเลิกการแชร์ token", "INFO");
+  }
+
+  hideSharePicker();
+});
+
+// ════════════════════════════════════════
 // HOTBAR DISPLAY
 // ════════════════════════════════════════
 
@@ -5953,6 +6226,12 @@ function showHotbar(char) {
     wsBtn.style.display = hasCreatures ? "" : "none";
   }
 
+  // Show Share button only for GM
+  const shareBtn = document.querySelector('.hotbar-btn.share-btn');
+  if (shareBtn) {
+    shareBtn.style.display = playerRole === "GM" ? "" : "none";
+  }
+
   // Make HP chip clickable to open editor
   const hpChip = statsBar.querySelector(".stat-chip.hp");
   if (hpChip) {
@@ -5973,7 +6252,7 @@ function hideHotbar() { hotbar.classList.add("hidden"); statsBar.classList.add("
 function hideInventoryPanel() { inventoryPanel.classList.remove("visible"); }
 function hideTokenSavePanel() { tokenSavePanel.classList.remove("visible"); }
 function hideWildShapePanel() { document.getElementById("wildshape-panel").classList.remove("visible"); }
-function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); hideFeaturesPanel(); hideTokenSavePanel(); hideWildShapePanel(); hideLayOnHandsPanel(); currentTokenId = null; }
+function hideAll() { hideHotbar(); hideError(); linkPanel.classList.add("hidden"); hideSpellPicker(); hideConditionPicker(); hideActionPicker(); hideSkillPicker(); hideSavePicker(); hideBonusPicker(); hideAoeResults(); hideDamageRollPanel(); hideInventoryPanel(); hideFeaturesPanel(); hideTokenSavePanel(); hideWildShapePanel(); hideLayOnHandsPanel(); hideSharePicker(); currentTokenId = null; }
 
 function showLinkPanel(name) {
   linkStatus.textContent = `"${name}" has no character linked.`;
@@ -5996,7 +6275,16 @@ const NON_COMBAT_ROLLS = {
 document.querySelectorAll(".hotbar-btn").forEach((btn) => {
   btn.addEventListener("click", async () => {
     const action = btn.dataset.action;
-    if (!action || !currentCharData) return;
+    if (!action) return;
+
+    // Share action doesn't need currentCharData check — it's a GM-only token metadata operation
+    if (action === "share") {
+      if (sharePicker.classList.contains("visible")) hideSharePicker();
+      else showSharePicker();
+      return;
+    }
+
+    if (!currentCharData) return;
 
     if (action === "conditions") {
       if (conditionPicker.classList.contains("visible")) hideConditionPicker();

@@ -1,0 +1,577 @@
+[
+    {
+        "id":  24885296,
+        "entityTypeId":  779871897,
+        "name":  null,
+        "description":  null,
+        "isActive":  false,
+        "removedHitPoints":  0,
+        "temporaryHitPoints":  null,
+        "groupId":  13,
+        "definition":  {
+                           "id":  16844,
+                           "entityTypeId":  779871897,
+                           "name":  "Draft Horse",
+                           "alignmentId":  10,
+                           "sizeId":  5,
+                           "typeId":  2,
+                           "armorClass":  10,
+                           "armorClassDescription":  "",
+                           "averageHitPoints":  19,
+                           "hitPointDice":  {
+                                                "diceCount":  3,
+                                                "diceValue":  10,
+                                                "diceMultiplier":  null,
+                                                "fixedValue":  3,
+                                                "diceString":  "3d10 + 3"
+                                            },
+                           "movements":  [
+                                             {
+                                                 "movementId":  1,
+                                                 "speed":  40,
+                                                 "notes":  ""
+                                             }
+                                         ],
+                           "passivePerception":  10,
+                           "isHomebrew":  false,
+                           "challengeRatingId":  3,
+                           "sourceId":  1,
+                           "sourcePageNumber":  124,
+                           "isLegendary":  false,
+                           "isMythic":  false,
+                           "hasLair":  false,
+                           "avatarUrl":  null,
+                           "largeAvatarUrl":  null,
+                           "basicAvatarUrl":  null,
+                           "version":  null,
+                           "swarm":  null,
+                           "subTypes":  [
+
+                                        ],
+                           "environments":  [
+                                                2435804
+                                            ],
+                           "tags":  [
+                                        "Misc Creature"
+                                    ],
+                           "sources":  [
+                                           {
+                                               "sourceId":  1,
+                                               "pageNumber":  null,
+                                               "sourceType":  2
+                                           },
+                                           {
+                                               "sourceId":  5,
+                                               "pageNumber":  124,
+                                               "sourceType":  1
+                                           }
+                                       ],
+                           "stats":  [
+                                         {
+                                             "statId":  1,
+                                             "name":  null,
+                                             "value":  18
+                                         },
+                                         {
+                                             "statId":  2,
+                                             "name":  null,
+                                             "value":  10
+                                         },
+                                         {
+                                             "statId":  3,
+                                             "name":  null,
+                                             "value":  12
+                                         },
+                                         {
+                                             "statId":  4,
+                                             "name":  null,
+                                             "value":  2
+                                         },
+                                         {
+                                             "statId":  5,
+                                             "name":  null,
+                                             "value":  11
+                                         },
+                                         {
+                                             "statId":  6,
+                                             "name":  null,
+                                             "value":  7
+                                         }
+                                     ],
+                           "senses":  [
+
+                                      ],
+                           "damageAdjustments":  [
+
+                                                 ],
+                           "conditionImmunities":  [
+
+                                                   ],
+                           "savingThrows":  [
+
+                                            ],
+                           "skills":  [
+
+                                      ],
+                           "languages":  [
+
+                                         ],
+                           "specialTraitsDescription":  "",
+                           "actionsDescription":  "\u003cp\u003e\u003cem\u003e\u003cstrong\u003eHooves.\u003c/strong\u003e Melee Weapon Attack:\u003c/em\u003e +6 to hit, reach 5 ft., one target. \u003cem\u003eHit:\u003c/em\u003e 9 (2d4 + 4) bludgeoning damage.\u003c/p\u003e",
+                           "reactionsDescription":  "",
+                           "legendaryActionsDescription":  "",
+                           "mythicActionsDescription":  "",
+                           "bonusActionsDescription":  "",
+                           "characteristicsDescription":  "",
+                           "lairDescription":  "",
+                           "languageDescription":  " --  ",
+                           "languageNote":  " --  ",
+                           "hideCr":  false,
+                           "isLegacy":  false,
+                           "statBlockType":  0,
+                           "initiative":  null,
+                           "lairChallengeRatingId":  null,
+                           "gear":  null,
+                           "slug":  ""
+                       }
+    },
+    {
+        "id":  24885303,
+        "entityTypeId":  779871897,
+        "name":  null,
+        "description":  null,
+        "isActive":  false,
+        "removedHitPoints":  0,
+        "temporaryHitPoints":  null,
+        "groupId":  13,
+        "definition":  {
+                           "id":  5195022,
+                           "entityTypeId":  779871897,
+                           "name":  "Giant Lizard",
+                           "alignmentId":  10,
+                           "sizeId":  5,
+                           "typeId":  2,
+                           "armorClass":  12,
+                           "armorClassDescription":  "",
+                           "averageHitPoints":  19,
+                           "hitPointDice":  {
+                                                "diceCount":  3,
+                                                "diceValue":  10,
+                                                "diceMultiplier":  null,
+                                                "fixedValue":  3,
+                                                "diceString":  "3d10 + 3"
+                                            },
+                           "movements":  [
+                                             {
+                                                 "movementId":  1,
+                                                 "speed":  40,
+                                                 "notes":  ""
+                                             },
+                                             {
+                                                 "movementId":  3,
+                                                 "speed":  40,
+                                                 "notes":  ""
+                                             }
+                                         ],
+                           "passivePerception":  10,
+                           "isHomebrew":  false,
+                           "challengeRatingId":  3,
+                           "sourceId":  147,
+                           "sourcePageNumber":  358,
+                           "isLegendary":  false,
+                           "isMythic":  false,
+                           "hasLair":  false,
+                           "avatarUrl":  "https://www.dndbeyond.com/avatars/47138/869/638741964123576361.jpeg?width=350\u0026height=350\u0026fit=bounds\u0026quality=95\u0026auto=webp",
+                           "largeAvatarUrl":  "https://www.dndbeyond.com/avatars/47138/870/638741964124668470.png?width=1000\u0026height=1000\u0026fit=bounds\u0026quality=95\u0026auto=webp",
+                           "basicAvatarUrl":  null,
+                           "version":  null,
+                           "swarm":  null,
+                           "subTypes":  [
+
+                                        ],
+                           "environments":  [
+                                                32309291,
+                                                32309292,
+                                                32309293,
+                                                32309294,
+                                                32309295
+                                            ],
+                           "tags":  [
+
+                                    ],
+                           "sources":  [
+                                           {
+                                               "sourceId":  147,
+                                               "pageNumber":  358,
+                                               "sourceType":  1
+                                           }
+                                       ],
+                           "stats":  [
+                                         {
+                                             "statId":  1,
+                                             "name":  null,
+                                             "value":  15
+                                         },
+                                         {
+                                             "statId":  2,
+                                             "name":  null,
+                                             "value":  12
+                                         },
+                                         {
+                                             "statId":  3,
+                                             "name":  null,
+                                             "value":  13
+                                         },
+                                         {
+                                             "statId":  4,
+                                             "name":  null,
+                                             "value":  2
+                                         },
+                                         {
+                                             "statId":  5,
+                                             "name":  null,
+                                             "value":  10
+                                         },
+                                         {
+                                             "statId":  6,
+                                             "name":  null,
+                                             "value":  5
+                                         }
+                                     ],
+                           "senses":  [
+                                          {
+                                              "senseId":  2,
+                                              "notes":  "60 ft."
+                                          }
+                                      ],
+                           "damageAdjustments":  [
+
+                                                 ],
+                           "conditionImmunities":  [
+
+                                                   ],
+                           "savingThrows":  [
+                                                {
+                                                    "statId":  2,
+                                                    "bonusModifier":  null
+                                                }
+                                            ],
+                           "skills":  [
+
+                                      ],
+                           "languages":  [
+
+                                         ],
+                           "specialTraitsDescription":  "\u003cp\u003e\u003cem\u003e\u003cstrong\u003eSpider Climb.\u003c/strong\u003e\u003c/em\u003e The lizard can climb difficult surfaces, including along ceilings, without needing to make an ability check.\u003c/p\u003e",
+                           "actionsDescription":  "\u003cp\u003e\u003cem\u003e\u003cstrong\u003eBite.\u003c/strong\u003e Melee Attack Roll:\u003c/em\u003e +4, reach 5 ft. \u003cem\u003eHit:\u003c/em\u003e 6 (1d8 + 2) Piercing damage.\u003c/p\u003e",
+                           "reactionsDescription":  "",
+                           "legendaryActionsDescription":  "",
+                           "mythicActionsDescription":  "",
+                           "bonusActionsDescription":  "",
+                           "characteristicsDescription":  null,
+                           "lairDescription":  "",
+                           "languageDescription":  null,
+                           "languageNote":  "",
+                           "hideCr":  false,
+                           "isLegacy":  false,
+                           "statBlockType":  1,
+                           "initiative":  {
+                                              "score":  11,
+                                              "bonus":  1
+                                          },
+                           "lairChallengeRatingId":  null,
+                           "gear":  "",
+                           "slug":  ""
+                       }
+    },
+    {
+        "id":  24885312,
+        "entityTypeId":  779871897,
+        "name":  null,
+        "description":  null,
+        "isActive":  false,
+        "removedHitPoints":  0,
+        "temporaryHitPoints":  null,
+        "groupId":  13,
+        "definition":  {
+                           "id":  16793,
+                           "entityTypeId":  779871897,
+                           "name":  "Axe Beak",
+                           "alignmentId":  10,
+                           "sizeId":  5,
+                           "typeId":  2,
+                           "armorClass":  11,
+                           "armorClassDescription":  "",
+                           "averageHitPoints":  19,
+                           "hitPointDice":  {
+                                                "diceCount":  3,
+                                                "diceValue":  10,
+                                                "diceMultiplier":  null,
+                                                "fixedValue":  3,
+                                                "diceString":  "3d10 + 3"
+                                            },
+                           "movements":  [
+                                             {
+                                                 "movementId":  1,
+                                                 "speed":  50,
+                                                 "notes":  ""
+                                             }
+                                         ],
+                           "passivePerception":  10,
+                           "isHomebrew":  false,
+                           "challengeRatingId":  3,
+                           "sourceId":  1,
+                           "sourcePageNumber":  118,
+                           "isLegendary":  false,
+                           "isMythic":  false,
+                           "hasLair":  false,
+                           "avatarUrl":  null,
+                           "largeAvatarUrl":  null,
+                           "basicAvatarUrl":  null,
+                           "version":  null,
+                           "swarm":  null,
+                           "subTypes":  [
+
+                                        ],
+                           "environments":  [
+                                                2435718,
+                                                2435719
+                                            ],
+                           "tags":  [
+                                        "Misc Creature"
+                                    ],
+                           "sources":  [
+                                           {
+                                               "sourceId":  1,
+                                               "pageNumber":  null,
+                                               "sourceType":  2
+                                           },
+                                           {
+                                               "sourceId":  5,
+                                               "pageNumber":  118,
+                                               "sourceType":  1
+                                           }
+                                       ],
+                           "stats":  [
+                                         {
+                                             "statId":  1,
+                                             "name":  null,
+                                             "value":  14
+                                         },
+                                         {
+                                             "statId":  2,
+                                             "name":  null,
+                                             "value":  12
+                                         },
+                                         {
+                                             "statId":  3,
+                                             "name":  null,
+                                             "value":  12
+                                         },
+                                         {
+                                             "statId":  4,
+                                             "name":  null,
+                                             "value":  2
+                                         },
+                                         {
+                                             "statId":  5,
+                                             "name":  null,
+                                             "value":  10
+                                         },
+                                         {
+                                             "statId":  6,
+                                             "name":  null,
+                                             "value":  5
+                                         }
+                                     ],
+                           "senses":  [
+
+                                      ],
+                           "damageAdjustments":  [
+
+                                                 ],
+                           "conditionImmunities":  [
+
+                                                   ],
+                           "savingThrows":  [
+
+                                            ],
+                           "skills":  [
+
+                                      ],
+                           "languages":  [
+
+                                         ],
+                           "specialTraitsDescription":  "",
+                           "actionsDescription":  "\u003cp\u003e\u003cem\u003e\u003cstrong\u003eBeak.\u003c/strong\u003e Melee Weapon Attack:\u003c/em\u003e +4 to hit, reach 5 ft., one target. \u003cem\u003eHit:\u003c/em\u003e 6 (1d8 + 2) slashing damage.\u003c/p\u003e",
+                           "reactionsDescription":  "",
+                           "legendaryActionsDescription":  "",
+                           "mythicActionsDescription":  "",
+                           "bonusActionsDescription":  "",
+                           "characteristicsDescription":  "\u003cp\u003eAn axe beak is a tall flightless bird with strong legs and a heavy, wedge-shaped beak. It has a nasty disposition and tends to attack any unfamiliar creature that wanders too close.\u003c/p\u003e",
+                           "lairDescription":  "",
+                           "languageDescription":  " --  ",
+                           "languageNote":  " --  ",
+                           "hideCr":  false,
+                           "isLegacy":  false,
+                           "statBlockType":  0,
+                           "initiative":  null,
+                           "lairChallengeRatingId":  null,
+                           "gear":  null,
+                           "slug":  ""
+                       }
+    },
+    {
+        "id":  24885337,
+        "entityTypeId":  779871897,
+        "name":  null,
+        "description":  null,
+        "isActive":  false,
+        "removedHitPoints":  0,
+        "temporaryHitPoints":  null,
+        "groupId":  13,
+        "definition":  {
+                           "id":  4775832,
+                           "entityTypeId":  779871897,
+                           "name":  "Panther",
+                           "alignmentId":  10,
+                           "sizeId":  4,
+                           "typeId":  2,
+                           "armorClass":  13,
+                           "armorClassDescription":  "",
+                           "averageHitPoints":  13,
+                           "hitPointDice":  {
+                                                "diceCount":  3,
+                                                "diceValue":  8,
+                                                "diceMultiplier":  null,
+                                                "fixedValue":  0,
+                                                "diceString":  "3d8"
+                                            },
+                           "movements":  [
+                                             {
+                                                 "movementId":  1,
+                                                 "speed":  50,
+                                                 "notes":  null
+                                             },
+                                             {
+                                                 "movementId":  3,
+                                                 "speed":  40,
+                                                 "notes":  null
+                                             }
+                                         ],
+                           "passivePerception":  14,
+                           "isHomebrew":  false,
+                           "challengeRatingId":  3,
+                           "sourceId":  147,
+                           "sourcePageNumber":  366,
+                           "isLegendary":  false,
+                           "isMythic":  false,
+                           "hasLair":  false,
+                           "avatarUrl":  "https://www.dndbeyond.com/avatars/47158/777/638742829883957474.jpeg?width=350\u0026height=350\u0026fit=bounds\u0026quality=95\u0026auto=webp",
+                           "largeAvatarUrl":  "https://www.dndbeyond.com/avatars/47158/778/638742829885437442.png?width=1000\u0026height=1000\u0026fit=bounds\u0026quality=95\u0026auto=webp",
+                           "basicAvatarUrl":  null,
+                           "version":  null,
+                           "swarm":  null,
+                           "subTypes":  [
+
+                                        ],
+                           "environments":  [
+                                                32322224,
+                                                32322225,
+                                                32322226
+                                            ],
+                           "tags":  [
+
+                                    ],
+                           "sources":  [
+                                           {
+                                               "sourceId":  147,
+                                               "pageNumber":  366,
+                                               "sourceType":  1
+                                           }
+                                       ],
+                           "stats":  [
+                                         {
+                                             "statId":  1,
+                                             "name":  null,
+                                             "value":  14
+                                         },
+                                         {
+                                             "statId":  2,
+                                             "name":  null,
+                                             "value":  16
+                                         },
+                                         {
+                                             "statId":  3,
+                                             "name":  null,
+                                             "value":  10
+                                         },
+                                         {
+                                             "statId":  4,
+                                             "name":  null,
+                                             "value":  3
+                                         },
+                                         {
+                                             "statId":  5,
+                                             "name":  null,
+                                             "value":  14
+                                         },
+                                         {
+                                             "statId":  6,
+                                             "name":  null,
+                                             "value":  7
+                                         }
+                                     ],
+                           "senses":  [
+                                          {
+                                              "senseId":  2,
+                                              "notes":  "60 ft."
+                                          }
+                                      ],
+                           "damageAdjustments":  [
+
+                                                 ],
+                           "conditionImmunities":  [
+
+                                                   ],
+                           "savingThrows":  [
+
+                                            ],
+                           "skills":  [
+                                          {
+                                              "skillId":  5,
+                                              "value":  7,
+                                              "additionalBonus":  null
+                                          },
+                                          {
+                                              "skillId":  14,
+                                              "value":  4,
+                                              "additionalBonus":  null
+                                          }
+                                      ],
+                           "languages":  [
+
+                                         ],
+                           "specialTraitsDescription":  "",
+                           "actionsDescription":  "\u003cp\u003e\u003cem\u003e\u003cstrong\u003eRend.\u003c/strong\u003e Melee Attack Roll:\u003c/em\u003e +5, reach 5 ft. \u003cem\u003eHit:\u003c/em\u003e 6 (1d6 + 3) Slashing damage\u003c/p\u003e",
+                           "reactionsDescription":  "",
+                           "legendaryActionsDescription":  "",
+                           "mythicActionsDescription":  "",
+                           "bonusActionsDescription":  "\u003cp\u003e\u003cem\u003e\u003cstrong\u003eNimble Escape.\u003c/strong\u003e\u003c/em\u003e The panther takes the Disengage or Hide action.\u003c/p\u003e",
+                           "characteristicsDescription":  null,
+                           "lairDescription":  "",
+                           "languageDescription":  null,
+                           "languageNote":  "",
+                           "hideCr":  false,
+                           "isLegacy":  false,
+                           "statBlockType":  1,
+                           "initiative":  {
+                                              "score":  13,
+                                              "bonus":  3
+                                          },
+                           "lairChallengeRatingId":  null,
+                           "gear":  "",
+                           "slug":  ""
+                       }
+    }
+]
